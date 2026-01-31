@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "lucide-react": "^0.563.0",
+    "react-force-graph-2d": "^1.29.0",
+    "tailwindcss": "^4.1.18"
+  }
+}
