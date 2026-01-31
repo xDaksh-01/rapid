@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import {
     Search, AlertTriangle, ArrowDownLeft, ArrowUpRight,
-    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText
+    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText, Percent
 } from 'lucide-react';
 
 /**
@@ -122,6 +122,10 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
             ...(transactions?.outgoing || []).map(tx => ({ ...tx, type: 'outgoing', counterparty: tx.to }))
         ].sort((a, b) => b.amount - a.amount).slice(0, 10);
 
+        const outgoingVolume = transactions?.outgoing?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+        const peelingPercentRaw = incomingVolume > 0 ? (outgoingVolume / incomingVolume) * 100 : null;
+        const peelingPercent = peelingPercentRaw != null ? 100 - peelingPercentRaw : null;
+
         // Create report data
         const reportData = {
             walletId: node.id,
@@ -130,7 +134,9 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
             status,
             forensicReasoning: reasoning,
             topTransactions: allTx,
-            incomingVolume
+            incomingVolume,
+            outgoingVolume,
+            peelingPercent
         };
 
         // Create printable HTML
@@ -190,7 +196,7 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
         .status.suspected { background: rgba(234, 179, 8, 0.2); color: #eab308; }
         .status.clean { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
         
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 15px; }
         .stat-box {
             background: #0f172a;
             padding: 15px;
@@ -263,6 +269,10 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
             <div class="stat-box">
                 <div class="stat-value">$${reportData.incomingVolume.toFixed(0)}</div>
                 <div class="stat-label">Incoming Volume</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${reportData.peelingPercent != null ? reportData.peelingPercent.toFixed(2) + '%' : '—'}</div>
+                <div class="stat-label">Peeling %</div>
             </div>
         </div>
     </div>
@@ -520,11 +530,27 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                     <MiniStat label="In" value={centrality.inDegree} icon={<ArrowDownLeft className="w-3 h-3 text-green-400" />} />
                     <MiniStat label="Out" value={centrality.outDegree} icon={<ArrowUpRight className="w-3 h-3 text-red-400" />} />
                     <MiniStat label="Vol" value={`$${correctVolume.toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
+                    <div className="p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Percent className="w-3 h-3 text-amber-400" />
+                            <span className="text-xs text-[var(--text-secondary)]">Peeling %</span>
+                        </div>
+                        <span className="font-bold text-amber-400 text-lg tabular-nums">
+                            {context.peeling?.peelingPercent != null
+                                ? `${(100 - context.peeling.peelingPercent).toFixed(2)}%`
+                                : '—'}
+                        </span>
+                    </div>
                 </div>
+                {context.peeling && (context.peeling.totalIncoming > 0 || context.peeling.totalOutgoing > 0) && (
+                    <p className="text-xs text-[var(--text-secondary)]">
+                        100 − Peeling % (displayed above)
+                    </p>
+                )}
 
                 {/* Peeling Chain Section */}
                 {investigatedNodeData?.peeling?.inPeelingChain && (
@@ -653,12 +679,6 @@ function PeelingChainSection({ peeling, nodeId }) {
                     </div>
                 </div>
                 <div className="bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)]">
-                    <div className="text-[var(--text-secondary)]">Peel %</div>
-                    <div className="text-sm font-semibold text-red-400">
-                        {peeling.totalPeelPercentage.toFixed(1)}%
-                    </div>
-                </div>
-                <div className="bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)]">
                     <div className="text-[var(--text-secondary)]">Chain Length</div>
                     <div className="text-sm font-semibold text-blue-400">
                         {peeling.maxChainLength} hops
@@ -676,12 +696,19 @@ function PeelingChainSection({ peeling, nodeId }) {
                             {peeling.chains.map((chain, i) => (
                                 <div key={i} className="py-1 border-b border-[var(--border-color)] last:border-0">
                                     <div className="text-[var(--text-secondary)] mb-0.5">
-                                        Chain {i + 1}: {chain.path.slice(0, 4).map(w => w.split('_').pop()).join(' → ')}
-                                        {chain.path.length > 4 && '...'}
+                                        <div className="font-medium text-white/90 mb-0.5">Chain {i + 1}</div>
+                                        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5" title={(chain.path || []).join(' → ')}>
+                                            {[...(chain.path || [])].reverse().slice(0, 6).map((w, j) => (
+                                                <span key={j}>
+                                                    <span className="font-mono text-blue-300" title={w}>{w.split('_').slice(1).join('_') || w}</span>
+                                                    {j < Math.min(chain.path?.length ?? 0, 6) - 1 && <span className="text-[var(--text-secondary)]">→</span>}
+                                                </span>
+                                            ))}
+                                            {(chain.path?.length ?? 0) > 6 && <span className="text-[var(--text-secondary)]">...</span>}
+                                        </div>
                                     </div>
                                     <div className="space-y-0.5 text-xs">
                                         <div className="flex gap-2 text-[var(--text-secondary)]">
-                                            <span>Peel: <span className="text-red-400">{chain.peelPercentage.toFixed(1)}%</span></span>
                                             <span>Len: <span className="text-blue-400">{chain.length}</span></span>
                                         </div>
                                         {chain.incomingTimestamp && (

@@ -96,10 +96,16 @@ function App() {
     const centrality = calculateCentrality(investigatedNode.id, directLinks);
     const transactions = getWalletTransactions(investigatedNode.id, directLinks);
 
+    // Peeling % at this node: (Total Outgoing / Total Incoming) × 100
+    const totalIncoming = (transactions.incoming || []).reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+    const totalOutgoing = (transactions.outgoing || []).reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+    const peelingPercent = totalIncoming > 0 ? (totalOutgoing / totalIncoming) * 100 : null;
+
     return {
       node: investigatedNode,
       centrality,
       transactions,
+      peeling: { totalIncoming, totalOutgoing, peelingPercent },
       status: investigatedNode.suspicionScore > 0.7 ? 'Illicit' :
         investigatedNode.suspicionScore > 0.4 ? 'Suspected' : 'Licit'
     };
