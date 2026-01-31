@@ -43,6 +43,28 @@ function App() {
     loadData();
   }, []);
 
+  // Compute filtered node counts based on threshold
+  const filterStats = useMemo(() => {
+    if (!data?.nodes) return { visibleNodes: 0, illicitNodes: 0 };
+
+    const filteredNodes = data.nodes.filter(n => n.suspicionScore >= threshold);
+    const illicitCount = data.nodes.filter(n => n.suspicionScore > 0.7).length;
+
+    const stats = {
+      visibleNodes: filteredNodes.length,
+      illicitNodes: illicitCount
+    };
+    console.log('filterStats updated:', stats, 'threshold:', threshold);
+    return stats;
+  }, [data, threshold]);
+
+  // Merge filterStats with metadata
+  const mergedMetadata = useMemo(() => {
+    const merged = { ...data?.metadata, ...filterStats };
+    console.log('Merged metadata:', merged);
+    return merged;
+  }, [data?.metadata, filterStats]);
+
   // Compute investigation context
   const investigationContext = useMemo(() => {
     if (!investigatedNode || !data) return null;
@@ -103,7 +125,7 @@ function App() {
         <FilterPanel
           threshold={threshold}
           onThresholdChange={setThreshold}
-          metadata={data?.metadata}
+          metadata={mergedMetadata}
         />
 
         <ForceGraph
@@ -151,6 +173,7 @@ function App() {
             chainStats={data?.chainStats}
             metadata={data?.metadata}
             data={data}
+            onBack={() => setInvestigatedNode(null)}
           />
         )}
       </div>

@@ -7,7 +7,7 @@ import {
 /**
  * Investigation Panel with clickable chain details
  */
-export default function InvestigationPanel({ context, chainStats, metadata, data, onHighlightChain }) {
+export default function InvestigationPanel({ context, chainStats, metadata, data, onHighlightChain, onBack }) {
     const [selectedChain, setSelectedChain] = useState(null);
 
     // Get chain details with all wallets and amounts
@@ -222,7 +222,10 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
 
                     {/* Back Button */}
                     <button
-                        onClick={() => setSelectedChain(null)}
+                        onClick={() => {
+                            setSelectedChain(null);
+                            onBack?.();
+                        }}
                         className="w-full py-3 px-4 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-color)] hover:border-purple-500/50 hover:bg-purple-500/10 transition-all text-white font-medium flex items-center justify-center gap-2"
                     >
                         ← Back to All Chains
@@ -246,7 +249,10 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                         <h2 className="font-semibold text-white">Investigating</h2>
                     </div>
                     <button
-                        onClick={() => setSelectedChain(null)}
+                        onClick={() => {
+                            setSelectedChain(null);
+                            onBack?.();
+                        }}
                         className="text-xs text-[var(--text-secondary)] hover:text-white"
                     >
                         ← Back to chains

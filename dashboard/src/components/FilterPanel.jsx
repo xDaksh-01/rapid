@@ -1,4 +1,4 @@
-import { Filter, AlertTriangle, Users, Link2 } from 'lucide-react';
+import { Filter, AlertTriangle, Users } from 'lucide-react';
 
 /**
  * Filter panel with suspicion threshold slider and graph stats.
@@ -8,6 +8,7 @@ export default function FilterPanel({
     onThresholdChange,
     metadata
 }) {
+    console.log('FilterPanel metadata:', metadata);
     return (
         <div className="absolute top-4 left-4 w-80 glass rounded-xl p-4 z-40 space-y-4">
             {/* Header */}
@@ -49,33 +50,28 @@ export default function FilterPanel({
             {/* Divider */}
             <div className="border-t border-[var(--border-color)]" />
 
-            {/* Stats */}
+            {/* Stats Tabs */}
             {metadata && (
                 <div className="space-y-3">
-                    <h4 className="text-sm font-medium text-[var(--text-secondary)]">Graph Statistics</h4>
-
                     <div className="grid grid-cols-2 gap-2">
-                        <MiniStat
-                            icon={<Users className="w-4 h-4" />}
-                            label="Nodes"
-                            value={metadata.totalNodes?.toLocaleString()}
-                        />
-                        <MiniStat
-                            icon={<Link2 className="w-4 h-4" />}
-                            label="Edges"
-                            value={metadata.totalLinks?.toLocaleString()}
-                        />
-                        <MiniStat
-                            icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
-                            label="Illicit"
-                            value={metadata.illicitNodes?.toLocaleString()}
-                            highlight
-                        />
-                        <MiniStat
-                            icon={<AlertTriangle className="w-4 h-4 text-orange-400" />}
-                            label="High Risk"
-                            value={metadata.highRiskNodes?.toLocaleString()}
-                        />
+                        <div className="p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                            <div className="flex items-center gap-1.5 text-[var(--text-secondary)] mb-1">
+                                <Users className="w-4 h-4" />
+                                <span className="text-xs">Nodes</span>
+                            </div>
+                            <span className="font-semibold text-white text-lg">
+                                {metadata.visibleNodes?.toLocaleString() || '—'}
+                            </span>
+                        </div>
+                        <div className="p-3 rounded-lg bg-red-500/10">
+                            <div className="flex items-center gap-1.5 text-[var(--text-secondary)] mb-1">
+                                <AlertTriangle className="w-4 h-4 text-red-400" />
+                                <span className="text-xs">Illicit</span>
+                            </div>
+                            <span className="font-semibold text-red-400 text-lg">
+                                {metadata.illicitNodes?.toLocaleString() || '—'}
+                            </span>
+                        </div>
                     </div>
                 </div>
             )}
@@ -98,20 +94,6 @@ export default function FilterPanel({
                     </div>
                 </div>
             </div>
-        </div>
-    );
-}
-
-function MiniStat({ icon, label, value, highlight }) {
-    return (
-        <div className={`p-2 rounded-lg ${highlight ? 'bg-red-500/10' : 'bg-[var(--bg-tertiary)]'}`}>
-            <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
-                {icon}
-                <span className="text-xs">{label}</span>
-            </div>
-            <span className={`font-semibold ${highlight ? 'text-red-400' : 'text-white'}`}>
-                {value || '—'}
-            </span>
         </div>
     );
 }

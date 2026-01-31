@@ -16,6 +16,7 @@ export default function ForceGraph({
     const graphRef = useRef();
     const [hoveredNode, setHoveredNode] = useState(null);
     const [pulseFactor, setPulseFactor] = useState(1);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
     // Pulsing animation
     useEffect(() => {
@@ -201,16 +202,31 @@ export default function ForceGraph({
     }, [hoveredNode, nodeTransactions]);
 
     return (
-        <div className="relative w-full h-full">
-            {/* Custom HTML Tooltip */}
+        <div 
+            className="relative w-full h-full"
+            onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
+        >
+            {/* Custom HTML Tooltip with Pointer */}
             {hoveredNode && tooltipContent && (
                 <div
                     className="fixed z-[100] glass p-3 rounded-lg text-xs max-w-xs pointer-events-none"
                     style={{
-                        left: Math.min(window.innerWidth - 250, Math.max(10, (hoveredNode.x || 0) + 20)),
-                        top: Math.min(window.innerHeight - 200, Math.max(10, (hoveredNode.y || 0) - 50))
+                        left: `${Math.min(window.innerWidth - 280, Math.max(10, mousePos.x + 20))}px`,
+                        top: `${Math.min(window.innerHeight - 200, Math.max(10, mousePos.y - 80))}px`
                     }}
                 >
+                    {/* Pointer Arrow */}
+                    <div
+                        className="absolute w-0 h-0"
+                        style={{
+                            left: '-8px',
+                            top: '20px',
+                            borderTop: '8px solid transparent',
+                            borderBottom: '8px solid transparent',
+                            borderRight: '8px solid rgba(30, 30, 35, 0.95)'
+                        }}
+                    />
+                    
                     <div className="font-mono text-blue-400 font-bold mb-2 truncate">
                         {tooltipContent.id}
                     </div>
