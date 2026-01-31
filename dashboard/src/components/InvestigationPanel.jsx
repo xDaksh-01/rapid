@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react';
 import {
     Search, AlertTriangle, ArrowDownLeft, ArrowUpRight,
-    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight
+    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning
 } from 'lucide-react';
 
 /**
  * Investigation Panel with clickable chain details
  */
-export default function InvestigationPanel({ context, chainStats, metadata, data, onHighlightChain, onBack }) {
+export default function InvestigationPanel({ context, chainStats, metadata, data, investigatedNodeData, onHighlightChain, onBack }) {
     const [selectedChain, setSelectedChain] = useState(null);
 
     // Get chain details with all wallets and amounts
@@ -272,6 +272,11 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                     <MiniStat label="Vol" value={`$${(node.volume || 0).toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
                 </div>
 
+                {/* Peeling Chain Section */}
+                {investigatedNodeData?.peeling?.inPeelingChain && (
+                    <PeelingChainSection peeling={investigatedNodeData.peeling} nodeId={node.id} />
+                )}
+
                 {/* Transactions tables */}
                 <TransactionTable title="Incoming" transactions={transactions.incoming} type="in" />
                 <TransactionTable title="Outgoing" transactions={transactions.outgoing} type="out" />
@@ -292,15 +297,22 @@ function TransactionTable({ title, transactions, type }) {
     return (
         <div className="space-y-1">
             <h4 className="text-xs font-medium text-white">{title} ({transactions.length})</h4>
-            <div className="bg-[var(--bg-tertiary)] rounded border border-[var(--border-color)] max-h-32 overflow-y-auto">
+            <div className="bg-[var(--bg-tertiary)] rounded border border-[var(--border-color)] max-h-40 overflow-y-auto">
                 {transactions.slice(0, 8).map((tx, i) => (
-                    <div key={i} className="flex justify-between items-center p-2 text-xs border-b border-[var(--border-color)] last:border-0">
-                        <span className="font-mono text-blue-400 truncate max-w-[100px]">
-                            {(type === 'in' ? tx.from : tx.to)?.split('_').slice(-2).join('_')}
-                        </span>
-                        <span className={type === 'in' ? 'text-green-400' : 'text-red-400'}>
-                            {type === 'in' ? '+' : '-'}${tx.amount.toFixed(2)}
-                        </span>
+                    <div key={i} className="flex flex-col p-2 text-xs border-b border-[var(--border-color)] last:border-0">
+                        <div className="flex justify-between items-start mb-1">
+                            <span className="font-mono text-blue-400 truncate max-w-[120px]">
+                                {(type === 'in' ? tx.from : tx.to)?.split('_').slice(-2).join('_')}
+                            </span>
+                            <span className={type === 'in' ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                                {type === 'in' ? '+' : '-'}${tx.amount.toFixed(2)}
+                            </span>
+                        </div>
+                        {tx.timestamp && (
+                            <div className="text-[var(--text-secondary)] text-xs">
+                                📅 {tx.timestamp.split('T')[0]} {tx.timestamp.split('T')[1]?.slice(0, 5)}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -322,6 +334,93 @@ function MiniStat({ icon, label, value }) {
         <div className="bg-[var(--bg-tertiary)] rounded p-2 text-center border border-[var(--border-color)]">
             <div className="flex items-center justify-center gap-1 mb-0.5">{icon}<span className="text-xs text-[var(--text-secondary)]">{label}</span></div>
             <span className="text-sm font-semibold text-white">{value}</span>
+        </div>
+    );
+}
+
+function PeelingChainSection({ peeling, nodeId }) {
+    const roleColor = {
+        'source': 'text-yellow-400 bg-yellow-500/20',
+        'intermediate': 'text-orange-400 bg-orange-500/20',
+        'destination': 'text-red-400 bg-red-500/20',
+        null: 'text-gray-400 bg-gray-500/20'
+    };
+
+    const roleLabel = {
+        'source': '🔴 Origin',
+        'intermediate': '⚪ Hop',
+        'destination': '🟢 End',
+        null: 'N/A'
+    };
+
+    return (
+        <div className="bg-purple-500/5 border border-purple-500/30 rounded-lg p-3 space-y-2">
+            <div className="flex items-center gap-2">
+                <Lightning className="w-4 h-4 text-purple-400" />
+                <h4 className="text-sm font-medium text-white">Peeling Chain Detection</h4>
+                <span className="text-xs px-2 py-0.5 rounded bg-purple-500/30 text-purple-300">⚠️ Obfuscation Pattern</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)]">
+                    <div className="text-[var(--text-secondary)]">Role</div>
+                    <div className={`text-sm font-semibold ${roleColor[peeling.chainParticipation]}`}>
+                        {roleLabel[peeling.chainParticipation]}
+                    </div>
+                </div>
+                <div className="bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)]">
+                    <div className="text-[var(--text-secondary)]">Peel %</div>
+                    <div className="text-sm font-semibold text-red-400">
+                        {peeling.totalPeelPercentage.toFixed(1)}%
+                    </div>
+                </div>
+                <div className="bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)]">
+                    <div className="text-[var(--text-secondary)]">Chain Length</div>
+                    <div className="text-sm font-semibold text-blue-400">
+                        {peeling.maxChainLength} hops
+                    </div>
+                </div>
+            </div>
+
+            {peeling.numChains > 0 && (
+                <div className="space-y-1">
+                    <p className="text-xs text-[var(--text-secondary)]">
+                        Part of <span className="text-purple-400 font-semibold">{peeling.numChains}</span> peeling chain{peeling.numChains > 1 ? 's' : ''}
+                    </p>
+                    {peeling.chains.length > 0 && (
+                        <div className="text-xs bg-[var(--bg-tertiary)] rounded p-2 border border-[var(--border-color)] max-h-24 overflow-y-auto">
+                            {peeling.chains.map((chain, i) => (
+                                <div key={i} className="py-1 border-b border-[var(--border-color)] last:border-0">
+                                    <div className="text-[var(--text-secondary)] mb-0.5">
+                                        Chain {i + 1}: {chain.path.slice(0, 4).map(w => w.split('_').pop()).join(' → ')}
+                                        {chain.path.length > 4 && '...'}
+                                    </div>
+                                    <div className="space-y-0.5 text-xs">
+                                        <div className="flex gap-2 text-[var(--text-secondary)]">
+                                            <span>Peel: <span className="text-red-400">{chain.peelPercentage.toFixed(1)}%</span></span>
+                                            <span>Len: <span className="text-blue-400">{chain.length}</span></span>
+                                        </div>
+                                        {chain.incomingTimestamp && (
+                                            <div className="text-[var(--text-secondary)]">
+                                                ↓ In: <span className="text-green-400">{chain.incomingTimestamp.split('T')[0]} {chain.incomingTimestamp.split('T')[1]?.slice(0, 5)}</span>
+                                            </div>
+                                        )}
+                                        {chain.outgoingTimestamp && (
+                                            <div className="text-[var(--text-secondary)]">
+                                                ↑ Out: <span className="text-red-400">{chain.outgoingTimestamp.split('T')[0]} {chain.outgoingTimestamp.split('T')[1]?.slice(0, 5)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div className="text-xs text-purple-300 italic">
+                💡 Peeling chains indicate obfuscation through sequential transfers with decreasing amounts (to cover fees)
+            </div>
         </div>
     );
 }

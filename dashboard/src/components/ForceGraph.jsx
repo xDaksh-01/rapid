@@ -11,7 +11,8 @@ export default function ForceGraph({
     onNodeClick,
     onInvestigateNode,
     width,
-    height
+    height,
+    onGraphDataUpdate
 }) {
     const graphRef = useRef();
     const [hoveredNode, setHoveredNode] = useState(null);
@@ -87,8 +88,11 @@ export default function ForceGraph({
 
         filteredNodes = filteredNodes.filter(n => connectedNodeIds.has(n.id));
 
-        return { nodes: filteredNodes, links: filteredLinks };
-    }, [data, threshold]);
+        const result = { nodes: filteredNodes, links: filteredLinks };
+        // Notify parent of filtered graph data
+        onGraphDataUpdate?.(result);
+        return result;
+    }, [data, threshold, onGraphDataUpdate]);
 
     // Custom node rendering
     const nodeCanvasObject = useCallback((node, ctx, globalScale) => {

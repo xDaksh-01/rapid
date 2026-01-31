@@ -137,7 +137,8 @@ export function getWalletTransactions(nodeId, links) {
                 to: dst,
                 amount: link.amount,
                 chainId: link.chainId,
-                hopNumber: link.hopNumber
+                hopNumber: link.hopNumber,
+                timestamp: link.timestamp
             });
         }
 
@@ -147,7 +148,8 @@ export function getWalletTransactions(nodeId, links) {
                 to: dst,
                 amount: link.amount,
                 chainId: link.chainId,
-                hopNumber: link.hopNumber
+                hopNumber: link.hopNumber,
+                timestamp: link.timestamp
             });
         }
     });

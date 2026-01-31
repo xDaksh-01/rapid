@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ForceGraph from './components/ForceGraph';
 import FilterPanel from './components/FilterPanel';
+import TopTabs from './components/TopTabs';
 import InvestigationPanel from './components/InvestigationPanel';
 import { Loader2, AlertTriangle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { calculateCentrality, getWalletTransactions } from './utils/graphUtils';
@@ -13,6 +14,8 @@ function App() {
   const [threshold, setThreshold] = useState(0);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
+  const [filteredGraphData, setFilteredGraphData] = useState(null);
+  const [selectedTab, setSelectedTab] = useState('Overview');
 
   const leftPaneWidth = rightPaneCollapsed ? dimensions.width - 48 : Math.floor(dimensions.width * 0.6);
   const rightPaneWidth = rightPaneCollapsed ? 48 : dimensions.width - leftPaneWidth;
@@ -65,12 +68,33 @@ function App() {
     return merged;
   }, [data?.metadata, filterStats]);
 
-  // Compute investigation context
+  // Compute investigation context with filtered transactions (only direct neighbors in visible graph)
   const investigationContext = useMemo(() => {
-    if (!investigatedNode || !data) return null;
+    if (!investigatedNode || !filteredGraphData) return null;
 
-    const centrality = calculateCentrality(investigatedNode.id, data.links);
-    const transactions = getWalletTransactions(investigatedNode.id, data.links);
+    // Use the filtered graph data that's actually being displayed
+    const visibleLinks = filteredGraphData.links;
+
+    // Get ONLY direct neighbors of the investigated node from visible links
+    const directLinks = visibleLinks.filter(l => {
+      const src = l.source?.id || l.source;
+      const tgt = l.target?.id || l.target;
+      const nodeId = investigatedNode.id;
+      
+      return src === nodeId || tgt === nodeId;
+    });
+
+    console.log('Investigation node:', investigatedNode.id);
+    console.log('Visible graph has', filteredGraphData.nodes.length, 'nodes and', filteredGraphData.links.length, 'links');
+    console.log('Direct links from node:', directLinks.length);
+    directLinks.forEach(l => {
+      const src = l.source?.id || l.source;
+      const tgt = l.target?.id || l.target;
+      console.log(`Link: ${src} -> ${tgt}`);
+    });
+
+    const centrality = calculateCentrality(investigatedNode.id, directLinks);
+    const transactions = getWalletTransactions(investigatedNode.id, directLinks);
 
     return {
       node: investigatedNode,
@@ -79,7 +103,7 @@ function App() {
       status: investigatedNode.suspicionScore > 0.7 ? 'Illicit' :
         investigatedNode.suspicionScore > 0.4 ? 'Suspected' : 'Licit'
     };
-  }, [investigatedNode, data]);
+  }, [investigatedNode, filteredGraphData]);
 
   const handleInvestigateNode = useCallback((node) => {
     setInvestigatedNode(node);
@@ -87,6 +111,7 @@ function App() {
 
   const handleNodeClick = useCallback((node) => {
     setInvestigatedNode(node);
+    setRightPaneCollapsed(false);  // Auto-expand right pane
   }, []);
 
   if (loading) {
@@ -122,17 +147,27 @@ function App() {
           </div>
         </div>
 
-        <FilterPanel
-          threshold={threshold}
-          onThresholdChange={setThreshold}
-          metadata={mergedMetadata}
-        />
+        {/* Tabs + Filter tab */}
+        <div className="absolute top-4 left-4 z-50">
+          <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
+          <div className="mt-2">
+            {selectedTab === 'Filter' && (
+                <FilterPanel
+                  threshold={threshold}
+                  onThresholdChange={setThreshold}
+                  metadata={mergedMetadata}
+                  embedded
+                />
+            )}
+          </div>
+        </div>
 
         <ForceGraph
           data={data}
           threshold={threshold}
           onNodeClick={handleNodeClick}
           onInvestigateNode={handleInvestigateNode}
+          onGraphDataUpdate={setFilteredGraphData}
           width={leftPaneWidth}
           height={dimensions.height}
         />
@@ -173,6 +208,7 @@ function App() {
             chainStats={data?.chainStats}
             metadata={data?.metadata}
             data={data}
+            investigatedNodeData={investigatedNode}
             onBack={() => setInvestigatedNode(null)}
           />
         )}
