@@ -58,6 +58,13 @@ function App() {
     return stats;
   }, [data, threshold]);
 
+  // Merge filterStats with metadata
+  const mergedMetadata = useMemo(() => {
+    const merged = { ...data?.metadata, ...filterStats };
+    console.log('Merged metadata:', merged);
+    return merged;
+  }, [data?.metadata, filterStats]);
+
   // Compute investigation context
   const investigationContext = useMemo(() => {
     if (!investigatedNode || !data) return null;
@@ -118,7 +125,7 @@ function App() {
         <FilterPanel
           threshold={threshold}
           onThresholdChange={setThreshold}
-          metadata={{ ...data?.metadata, ...filterStats }}
+          metadata={mergedMetadata}
         />
 
         <ForceGraph
@@ -166,6 +173,7 @@ function App() {
             chainStats={data?.chainStats}
             metadata={data?.metadata}
             data={data}
+            onBack={() => setInvestigatedNode(null)}
           />
         )}
       </div>
