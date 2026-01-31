@@ -4,7 +4,7 @@
 ================================================================================
 
 TEAM: Rapid Prototypers
-EVENT:  Turinger 2026
+EVENT: Turinger 2026
 
 ================================================================================
                          PROBLEM STATEMENT
@@ -29,7 +29,7 @@ A two-part AI-powered forensics system:
 1. GRAPH NEURAL NETWORK (GNN) - The Brain
    - Uses GraphSAGE architecture to learn wallet behavior patterns
    - Analyzes transaction topology, not just individual transactions
-   - Assigns "suspicion scores" (0-100%) to every wallet
+   - Assigns "suspicion scores" (0.0 to 1.0) to every wallet
    - Achieved 100% accuracy and 1.0 ROC-AUC on test data
 
 2. FORENSICS DASHBOARD - The Interface
@@ -37,6 +37,97 @@ A two-part AI-powered forensics system:
    - Enables investigators to drill-down into suspicious clusters
    - Provides automated "Smurfing Debrief" summaries
    - Tracks money flow from origin to destination
+
+================================================================================
+                    SUSPICION SCORE CALCULATION (0.0 - 1.0)
+================================================================================
+
+The suspicion score is a probability value (0.0 = clean, 1.0 = definitely illicit)
+calculated through multiple methods depending on the data source:
+
+-------------------------------------------------------------------------------
+METHOD 1: GNN MODEL PREDICTION (Primary Method)
+-------------------------------------------------------------------------------
+
+When the trained GraphSAGE model is available:
+
+1. FEATURE EXTRACTION (per wallet):
+   | Feature           | Description                        | Range      |
+   |-------------------|------------------------------------|------------|
+   | In-Degree         | Number of incoming transactions    | 0 - N      |
+   | Out-Degree        | Number of outgoing transactions    | 0 - N      |
+   | Total Volume      | Sum of all transaction amounts     | 0 - ∞      |
+   | Mean Time Delta   | Avg hours between transactions     | 0 - 8760   |
+   | Avg Hop Position  | Average position in chains         | 0 - 15     |
+   | Num Chains        | Number of laundering chains        | 0 - N      |
+
+2. NORMALIZATION:
+   Each feature is normalized to [0, 1] range using:
+   
+   normalized_value = (value - min) / (max - min)
+
+3. GNN FORWARD PASS:
+   - 2-layer GraphSAGE with neighborhood aggregation
+   - Layer 1: 64 hidden units, ReLU activation
+   - Layer 2: 2 output units (binary classification)
+   - Sigmoid activation gives probability [0.0, 1.0]
+
+4. FINAL SCORE:
+   suspicion_score = sigmoid(GNN_output[illicit_class])
+
+   Score Interpretation:
+   | Score Range | Status    | Color  | Meaning                    |
+   |-------------|-----------|--------|----------------------------|
+   | 0.0 - 0.4   | Clean     | Green  | Low risk, normal behavior  |
+   | 0.4 - 0.7   | Suspected | Yellow | Medium risk, needs review  |
+   | 0.7 - 1.0   | Illicit   | Red    | High risk, likely involved |
+
+-------------------------------------------------------------------------------
+METHOD 2: LABEL-BASED INFERENCE (Fallback Method)
+-------------------------------------------------------------------------------
+
+When no trained model is available, scores are inferred from wallet naming:
+
+1. WALLET NAME PATTERN MATCHING:
+
+   | Pattern Contains    | Label    | Inferred Score |
+   |---------------------|----------|----------------|
+   | "Clean"             | 0 (Licit)| 0.10           |
+   | "Illicit", "Mule"   | 1 (Illicit)| 0.85         |
+   | "Attack", "Exit"    | 1 (Illicit)| 0.85         |
+   | "W_A{n}_" (new)     | 1 (Illicit)| 0.85         |
+   | Other               | 0 (Licit)| 0.10           |
+
+2. CODE IMPLEMENTATION (export_network.py):
+
+   def infer_score(wallet_id):
+       if wallet_id in score_map:
+           return score_map[wallet_id]  # Use GNN score if available
+       label = infer_label(wallet_id)
+       return 0.85 if label == 1 else 0.10  # Fallback
+
+3. RATIONALE FOR 0.85 vs 1.0:
+   - Leaves room for false positives
+   - Allows threshold-based filtering
+   - More realistic than binary 0/1
+
+-------------------------------------------------------------------------------
+METHOD 3: HEURISTIC SCORING (Future Enhancement)
+-------------------------------------------------------------------------------
+
+Planned features for dynamic scoring without labels:
+
+1. FAN-OUT DETECTION:
+   If out_degree > 5 AND amounts are similar: +0.2 to score
+
+2. TEMPORAL ANOMALY:
+   If mean_time_delta < 1 hour between hops: +0.15 to score
+
+3. CHAIN PARTICIPATION:
+   If wallet appears in multiple chains: +0.1 per chain
+
+4. AMOUNT PATTERNS:
+   If amounts follow split pattern (50%/30%/20%): +0.25 to score
 
 ================================================================================
                          TECH STACK
@@ -68,45 +159,72 @@ DATA PROCESSING:
    - Chain tracking (hop number, split ratios)
 
 2. MULTI-HOP CHAIN DETECTION
-   - Supports 5-15 hop laundering chains
+   - Supports 3-8 hop laundering chains
    - Tracks initial amounts through each split
    - Detects "peeling chains" where fees are deducted
 
 3. INTERACTIVE INVESTIGATION
    - Hover: Shows incoming/outgoing transactions + net balance
-   - Click: Drill-down into 3-hop neighborhood
+   - Click: Opens investigation panel with wallet details
    - Filter: Suspicion threshold slider
-   - Reset: Return to overview
+   - Chains: Click any chain to see wallet flow
 
 4. AUDIT LOG
-   - Auto-generated "Smurfing Debrief" summaries
-   - Peeling chain analysis table
-   - Temporal log showing transaction timing
+   - Auto-generated chain analysis
+   - Wallet flow visualization (Source → Mule → Destination)
+   - Transaction amounts at each hop
+
+================================================================================
+                      DATA GENERATION DETAILS
+================================================================================
+
+WALLET NAMING CONVENTION:
+| Type        | Pattern         | Example        | Score |
+|-------------|-----------------|----------------|-------|
+| Clean       | W_Clean_{n}     | W_Clean_42     | 0.10  |
+| Source      | W_A{n}_S0       | W_A0_S0        | 0.85  |
+| Mule (Hop)  | W_A{n}_H{h}_{i} | W_A0_H1_0      | 0.85  |
+| Destination | W_A{n}_D        | W_A0_D         | 0.85  |
+
+TRANSACTION FLOW:
+1. Clean wallets send money to Source (mixing with legitimate funds)
+2. Source splits to multiple Mules (fan-out, hop 1)
+3. Mules forward with 0.5% fee deduction (layering, hops 2-N)
+4. Final hop consolidates to Destination (fan-in)
+5. Destination cashes out to Clean wallets
+
+MIXED EDGES (CRITICAL FOR REALISM):
+- Clean → Source: Illicit receives from legitimate sources
+- Mule → Clean: Mules pay fees/buy goods (side transactions)
+- Destination → Clean: Cash-out to exchanges/merchants
 
 ================================================================================
                       HOW IT WORKS
 ================================================================================
 
-STEP 1: Data Generation
-   - Creates synthetic transaction network with normal + attack patterns
-   - Attack patterns: Fan-out → Layering → Fan-in
-   - Chain depths: 5-15 hops with realistic timing
+STEP 1: Data Generation (datagenerate_v2.py)
+   - Creates synthetic transaction network
+   - Normal transactions: Random clean→clean
+   - Attack patterns: Source → Mules → Destination
+   - Chain depths: 3-8 hops with realistic timing
 
-STEP 2: GNN Training
-   - Builds graph with wallet features (degree, volume, timing)
+STEP 2: GNN Training (main.py)
+   - Builds graph with wallet features
    - Trains 2-layer GraphSAGE model
-   - Outputs suspicion scores for all wallets
+   - Outputs suspicion_scores.csv
 
-STEP 3: Visualization
-   - Loads network data into React dashboard
-   - Renders interactive force-directed graph
-   - Color-codes nodes: Red (illicit) → Orange (suspected) → Green (clean)
-   - Shows money flow with animated particles
+STEP 3: Export (export_network.py)
+   - Loads transactions + scores
+   - Assigns suspicion score to each wallet
+   - Exports JSON for dashboard
 
-STEP 4: Investigation
-   - Click any wallet to see transaction history
-   - View chain membership and hop positions
-   - Make informed decisions on flagging accounts
+STEP 4: Visualization (ForceGraph.jsx)
+   - Renders force-directed graph
+   - Color-codes by suspicion score:
+     * Red (>0.7): Known illicit
+     * Yellow (0.4-0.7): Suspected mule
+     * Green (<0.4): Clean account
+   - Pulsing glow on high-risk nodes
 
 ================================================================================
                       RESULTS
@@ -117,11 +235,11 @@ MODEL PERFORMANCE:
 - ROC-AUC:        1.0
 - False Positives: < 1%
 
-DATASET SCALE:
-- 142,000+ transactions
-- 68,000+ wallets
-- 150 laundering chains
-- Max 12-hop depth
+DEMO DATASET:
+- ~200 wallets
+- ~400 transactions
+- 5 laundering chains
+- 70+ mixed edges (clean↔illicit)
 
 ================================================================================
                       FILES STRUCTURE
@@ -134,28 +252,58 @@ DATASET SCALE:
 
 /dashboard/src
   components/
-    ForceGraph.jsx   - Main visualization
-    InvestigationPanel.jsx - Wallet details
-    FilterPanel.jsx  - Controls
+    ForceGraph.jsx        - Main graph visualization
+    InvestigationPanel.jsx - Chain tracking & wallet details
+    FilterPanel.jsx       - Threshold slider
+  utils/
+    graphUtils.js         - Centrality & transaction helpers
 
 main.py              - Training script
-datagenerate_v2.py   - Multi-hop data generator
-export_network.py    - JSON exporter for dashboard
+datagenerate_v2.py   - Multi-hop data generator with mixed edges
+export_network.py    - JSON exporter with score calculation
 run_test.py          - Quick test runner
-test_config.py       - Configurable test settings
 
 ================================================================================
                       QUICK START
 ================================================================================
 
 1. Generate test data:
-   python run_test.py
+   python datagenerate_v2.py --normal 30 --attacks 5 --max-depth 5
 
-2. Start dashboard:
+2. Export for dashboard:
+   python export_network.py --input massive_transactions_v2.csv
+
+3. Start dashboard:
    cd dashboard && npm run dev
 
-3. Open browser:
+4. Open browser:
    http://localhost:5173
+
+================================================================================
+                      INVESTIGATION WORKFLOW
+================================================================================
+
+1. VIEW OVERVIEW:
+   - Red nodes = high-risk wallets
+   - Green nodes = clean wallets
+   - Edge color gradient shows flow direction
+
+2. HOVER FOR DETAILS:
+   - Wallet ID
+   - Suspicion score (%)
+   - Incoming/Outgoing transaction count
+   - Net balance
+
+3. CLICK TO INVESTIGATE:
+   - Opens Investigation Panel
+   - Shows wallet status (Illicit/Suspected/Clean)
+   - Lists all incoming/outgoing transactions
+
+4. TRACK CHAINS:
+   - Click chain ID in Audit Dashboard
+   - See all wallets in the chain
+   - View amounts received/sent at each hop
+   - Visual flow: Source → Mules → Destination
 
 ================================================================================
                       WHY THIS MATTERS
@@ -178,10 +326,10 @@ test_config.py       - Configurable test settings
 - Cross-chain transaction tracking
 - Natural language query interface
 - Integration with exchange KYC systems
-- Mobile app for field investigators
+- Advanced heuristic scoring without labels
 
 ================================================================================
 
-Built with ❤️ by Rapid Prototypers for RIFT '26
+Built with ❤️ by Rapid Prototypers for Turinger '26
 
 ================================================================================

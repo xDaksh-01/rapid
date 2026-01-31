@@ -124,12 +124,22 @@ def export_network_data(
             return 1
         return 0
     
+    # Add variation based on wallet hash for consistency
     def infer_score(wallet_id):
         if wallet_id in score_map:
             return score_map[wallet_id]
+        
         label = infer_label(wallet_id)
-        # Give illicit nodes a score of 0.85 (high but allows for variation)
-        return 0.85 if label == 1 else 0.1
+        
+        # Generate consistent variation based on wallet ID hash
+        hash_val = hash(wallet_id) % 1000 / 1000.0
+        
+        if label == 1:
+            # Illicit: 0.75 - 0.95 (high risk with variation)
+            return 0.75 + hash_val * 0.20
+        else:
+            # Clean: 0.05 - 0.35 (low risk with variation)
+            return 0.05 + hash_val * 0.30
     
     # Build nodes
     print("🔵 Building nodes...")
