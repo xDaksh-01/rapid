@@ -15,7 +15,6 @@ export default function ForceGraph({
 }) {
     const graphRef = useRef();
     const [hoveredNode, setHoveredNode] = useState(null);
-    const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
     const [pulseFactor, setPulseFactor] = useState(1);
 
     // Pulsing animation
@@ -255,7 +254,7 @@ export default function ForceGraph({
                 linkCanvasObject={linkCanvasObject}
                 onNodeClick={handleNodeClick}
                 onNodeHover={handleNodeHover}
-                nodeLabel={() => ''} // Disable default tooltip, use custom
+                nodeLabel={() => ''}
                 linkDirectionalParticles={linkDirectionalParticles}
                 linkDirectionalParticleSpeed={linkDirectionalParticleSpeed}
                 linkDirectionalParticleWidth={2.5}
