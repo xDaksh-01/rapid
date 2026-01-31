@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
     Search, AlertTriangle, ArrowDownLeft, ArrowUpRight,
-    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning
+    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText
 } from 'lucide-react';
 
 /**
@@ -57,6 +57,260 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
             ...stats
         }));
     }, [chainStats]);
+
+    // Correct Volume: Sum of incoming transaction amounts only (must be before conditional returns)
+    const correctVolume = useMemo(() => {
+        if (!context?.transactions?.incoming) return 0;
+        return context.transactions.incoming.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    }, [context]);
+
+
+    // Generate AI Forensic Reasoning
+    const generateForensicReasoning = useCallback((node, transactions, status) => {
+        const inCount = transactions?.incoming?.length || 0;
+        const outCount = transactions?.outgoing?.length || 0;
+        // Correct volume: sum of incoming transaction amounts only
+        const incomingVolume = transactions?.incoming?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+        const score = ((node?.suspicionScore || 0) * 100).toFixed(1);
+
+        const patterns = [];
+        if (outCount > 5) patterns.push("high fan-out pattern (possible smurfing)");
+        if (inCount > 5) patterns.push("high fan-in pattern (possible aggregation)");
+        if (inCount === 1 && outCount > 3) patterns.push("single source → multiple destinations (distribution node)");
+        if (outCount === 1 && inCount > 3) patterns.push("multiple sources → single destination (collection node)");
+
+        const riskFactors = [];
+        if (node?.suspicionScore > 0.8) riskFactors.push("suspicion score exceeds 80% threshold");
+        if (incomingVolume > 5000) riskFactors.push("high incoming volume ($" + incomingVolume.toFixed(2) + ")");
+
+        return `
+FORENSIC ANALYSIS REPORT
+========================
+
+Wallet: ${node?.id || 'Unknown'}
+Status: ${status} | Suspicion Score: ${score}%
+
+BEHAVIORAL ANALYSIS:
+- Incoming Transactions: ${inCount}
+- Outgoing Transactions: ${outCount}
+- Incoming Volume: $${incomingVolume.toFixed(2)}
+
+${patterns.length > 0 ? `DETECTED PATTERNS:\n${patterns.map(p => "• " + p).join('\n')}` : 'No suspicious patterns detected.'}
+
+${riskFactors.length > 0 ? `RISK FACTORS:\n${riskFactors.map(r => "⚠ " + r).join('\n')}` : 'No significant risk factors.'}
+
+RECOMMENDATION:
+${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance review' :
+                status === 'Suspected' ? '🟡 MONITOR - Continue surveillance, gather more evidence' :
+                    '🟢 LOW RISK - No immediate action required'}
+        `.trim();
+    }, []);
+
+    // Generate and export forensic report as PDF
+    const generateForensicReport = useCallback(() => {
+        if (!context) return;
+
+        const { node, centrality, transactions, status } = context;
+        const reasoning = generateForensicReasoning(node, transactions, status);
+
+        // Calculate correct volume (sum of incoming transactions)
+        const incomingVolume = transactions?.incoming?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+
+        // Get top 10 suspicious transactions
+        const allTx = [
+            ...(transactions?.incoming || []).map(tx => ({ ...tx, type: 'incoming', counterparty: tx.from })),
+            ...(transactions?.outgoing || []).map(tx => ({ ...tx, type: 'outgoing', counterparty: tx.to }))
+        ].sort((a, b) => b.amount - a.amount).slice(0, 10);
+
+        // Create report data
+        const reportData = {
+            walletId: node.id,
+            simplifiedName: node.id.split('_').slice(-2).join('_'),
+            suspicionScore: (node.suspicionScore * 100).toFixed(1) + '%',
+            status,
+            forensicReasoning: reasoning,
+            topTransactions: allTx,
+            incomingVolume
+        };
+
+        // Create printable HTML
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Forensic Report - ${reportData.simplifiedName}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0a0a0f;
+            color: #e2e8f0;
+            padding: 40px;
+            line-height: 1.6;
+        }
+        .header {
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .logo { color: #3b82f6; font-size: 24px; font-weight: bold; }
+        .title { font-size: 32px; margin-top: 10px; color: #ffffff; }
+        .subtitle { color: #94a3b8; font-size: 14px; margin-top: 5px; }
+        
+        .section { 
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 18px;
+            color: #3b82f6;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+        }
+        
+        .wallet-id { 
+            font-family: monospace;
+            color: #60a5fa;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .status.illicit { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status.suspected { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+        .status.clean { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
+        .stat-box {
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value { font-size: 24px; font-weight: bold; color: #ffffff; }
+        .stat-label { font-size: 12px; color: #94a3b8; margin-top: 5px; }
+        
+        .reasoning {
+            background: #0f172a;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            line-height: 1.8;
+        }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+        th { background: #0f172a; color: #94a3b8; font-size: 12px; text-transform: uppercase; }
+        td { font-size: 13px; }
+        .amount-in { color: #22c55e; }
+        .amount-out { color: #ef4444; }
+        .mono { font-family: monospace; color: #60a5fa; }
+        
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #334155;
+            text-align: center;
+            color: #64748b;
+            font-size: 12px;
+        }
+        
+        @media print {
+            body { background: #0a0a0f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🔍 THE SMURFING HUNTER</div>
+        <div class="title">Forensic Investigation Report</div>
+        <div class="subtitle">Generated: ${new Date().toLocaleString()}</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">📋 Wallet Summary</div>
+        <p><strong>Wallet ID:</strong></p>
+        <p class="wallet-id">${reportData.walletId}</p>
+        <p style="margin-top: 15px;"><strong>Simplified Name:</strong> ${reportData.simplifiedName}</p>
+        <p style="margin-top: 10px;">
+            <strong>Status:</strong> 
+            <span class="status ${status.toLowerCase()}">${status}</span>
+            &nbsp;&nbsp;
+            <strong>Suspicion Score:</strong> ${reportData.suspicionScore}
+        </p>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-value">${centrality?.inDegree || 0}</div>
+                <div class="stat-label">Incoming TX</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${centrality?.outDegree || 0}</div>
+                <div class="stat-label">Outgoing TX</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">$${reportData.incomingVolume.toFixed(0)}</div>
+                <div class="stat-label">Incoming Volume</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">🧠 AI Forensic Reasoning</div>
+        <div class="reasoning">${reasoning}</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">💰 Top 10 Suspicious Transactions</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Source/Target</th>
+                    <th>Amount</th>
+                    <th>Type</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${allTx.map(tx => `
+                    <tr>
+                        <td class="mono">${(tx.counterparty || 'Unknown').split('_').slice(-2).join('_')}</td>
+                        <td class="${tx.type === 'incoming' ? 'amount-in' : 'amount-out'}">
+                            ${tx.type === 'incoming' ? '+' : '-'}$${tx.amount.toFixed(2)}
+                        </td>
+                        <td>${tx.type === 'incoming' ? '📥 Incoming' : '📤 Outgoing'}</td>
+                        <td>${tx.timestamp ? tx.timestamp.split('T')[0] : 'N/A'}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="footer">
+        <p>🔐 CONFIDENTIAL - For Authorized Personnel Only</p>
+        <p>Generated by The Smurfing Hunter | Rapid Prototypers © 2026</p>
+    </div>
+    
+    <script>
+        window.onload = function() { window.print(); }
+    </script>
+</body>
+</html>
+        `);
+        printWindow.document.close();
+    }, [context, generateForensicReasoning]);
 
     // Default view when no node is investigated
     if (!context && !selectedChain) {
@@ -269,7 +523,7 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                 <div className="grid grid-cols-3 gap-2">
                     <MiniStat label="In" value={centrality.inDegree} icon={<ArrowDownLeft className="w-3 h-3 text-green-400" />} />
                     <MiniStat label="Out" value={centrality.outDegree} icon={<ArrowUpRight className="w-3 h-3 text-red-400" />} />
-                    <MiniStat label="Vol" value={`$${(node.volume || 0).toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
+                    <MiniStat label="Vol" value={`$${correctVolume.toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
                 </div>
 
                 {/* Peeling Chain Section */}
@@ -280,12 +534,37 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                 {/* Transactions tables */}
                 <TransactionTable title="Incoming" transactions={transactions.incoming} type="in" />
                 <TransactionTable title="Outgoing" transactions={transactions.outgoing} type="out" />
+
+                {/* Generate Forensic Report Button */}
+                <button
+                    onClick={generateForensicReport}
+                    className="w-full py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40"
+                >
+                    <FileText className="w-5 h-5" />
+                    Generate Forensic Report
+                </button>
             </div>
         </div>
     );
 }
 
 function TransactionTable({ title, transactions, type }) {
+    // Format timestamp to "Feb 01, 02:57" format
+    const formatTimestamp = (timestamp) => {
+        if (!timestamp) return null;
+        try {
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) return null;
+            const month = date.toLocaleString('en-US', { month: 'short' });
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${month} ${day}, ${hours}:${minutes}`;
+        } catch {
+            return null;
+        }
+    };
+
     if (!transactions || transactions.length === 0) {
         return (
             <div className="text-xs text-[var(--text-secondary)] text-center py-2">
@@ -298,23 +577,28 @@ function TransactionTable({ title, transactions, type }) {
         <div className="space-y-1">
             <h4 className="text-xs font-medium text-white">{title} ({transactions.length})</h4>
             <div className="bg-[var(--bg-tertiary)] rounded border border-[var(--border-color)] max-h-40 overflow-y-auto">
-                {transactions.slice(0, 8).map((tx, i) => (
-                    <div key={i} className="flex flex-col p-2 text-xs border-b border-[var(--border-color)] last:border-0">
-                        <div className="flex justify-between items-start mb-1">
-                            <span className="font-mono text-blue-400 truncate max-w-[120px]">
-                                {(type === 'in' ? tx.from : tx.to)?.split('_').slice(-2).join('_')}
-                            </span>
-                            <span className={type === 'in' ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
-                                {type === 'in' ? '+' : '-'}${tx.amount.toFixed(2)}
-                            </span>
-                        </div>
-                        {tx.timestamp && (
-                            <div className="text-[var(--text-secondary)] text-xs">
-                                📅 {tx.timestamp.split('T')[0]} {tx.timestamp.split('T')[1]?.slice(0, 5)}
+                {transactions.slice(0, 8).map((tx, i) => {
+                    const formattedTime = formatTimestamp(tx.timestamp);
+                    return (
+                        <div key={i} className="flex flex-col p-2 text-xs border-b border-[var(--border-color)] last:border-0">
+                            <div className="flex justify-between items-center">
+                                <div className="flex flex-col">
+                                    <span className="font-mono text-blue-400 truncate max-w-[100px]">
+                                        {(type === 'in' ? tx.from : tx.to)?.split('_').slice(-2).join('_')}
+                                    </span>
+                                    {formattedTime && (
+                                        <span className="text-gray-400 text-xs mt-0.5">
+                                            {formattedTime}
+                                        </span>
+                                    )}
+                                </div>
+                                <span className={type === 'in' ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                                    {type === 'in' ? '+' : '-'}${tx.amount.toFixed(2)}
+                                </span>
                             </div>
-                        )}
-                    </div>
-                ))}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
