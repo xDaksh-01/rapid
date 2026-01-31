@@ -58,7 +58,7 @@ export default function ForceGraph({
         return txMap;
     }, [data]);
 
-    // Filter to connected nodes only
+    // Filter to connected nodes only and limit edges to 100
     const graphData = useMemo(() => {
         if (!data?.nodes || !data?.links) return { nodes: [], links: [] };
 
@@ -69,6 +69,13 @@ export default function ForceGraph({
             l => filteredNodeIds.has(l.source?.id || l.source) &&
                 filteredNodeIds.has(l.target?.id || l.target)
         );
+
+        // Limit to 100 edges for better visibility
+        if (filteredLinks.length > 100) {
+            // Sort by amount (highest value transactions first) and take top 100
+            filteredLinks.sort((a, b) => (b.amount || 0) - (a.amount || 0));
+            filteredLinks = filteredLinks.slice(0, 100);
+        }
 
         // Keep only connected nodes
         const connectedNodeIds = new Set();
@@ -265,7 +272,8 @@ export default function ForceGraph({
                 cooldownTicks={150}
                 enableNodeDrag={true}
                 nodePointerAreaPaint={(node, color, ctx) => {
-                    const radius = Math.max(15, Math.min(35, Math.log((node.volume || 1) + 1) * 5));
+                    // Use actual node size for precise clicking
+                    const radius = Math.max(6, Math.min(25, Math.log((node.volume || 1) + 1) * 3));
                     ctx.fillStyle = color;
                     ctx.beginPath();
                     ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
