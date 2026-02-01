@@ -196,7 +196,6 @@ function App() {
           <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Legend</h4>
           <div className="space-y-1.5 text-xs">
             <LegendItem color="bg-red-500" glow label="Known Illicit (score > 0.7)" />
-            <LegendItem color="bg-yellow-500" label="Suspected Mule (0.4-0.7)" />
             <LegendItem color="bg-green-500" label="Clean Account (< 0.4)" />
             <LegendItem color="border-2 border-yellow-500 bg-transparent" label="Seed / Investigated Node" />
           </div>

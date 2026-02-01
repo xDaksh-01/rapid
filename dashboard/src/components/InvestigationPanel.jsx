@@ -398,7 +398,7 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                         <span style="width: 8px; height: 8px; border-radius: 50%; background: ${slice.color}; box-shadow: 0 0 5px ${slice.color}"></span>
                         ${slice.label}
                     </div>
-                    <div class="risk-val">${slice.value.toFixed(1)}%</div>
+                    <div class="risk-val">${slice.displayValue || (slice.value.toFixed(1) + '%')}</div>
                 </div>
             `).join('')}
         </div>
@@ -746,7 +746,7 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                         <span style="width: 8px; height: 8px; border-radius: 50%; background: ${slice.color}; box-shadow: 0 0 5px ${slice.color}"></span>
                         ${slice.label}
                     </div>
-                    <div class="risk-val">${slice.value.toFixed(1)}%</div>
+                    <div class="risk-val">${slice.displayValue || (slice.value.toFixed(1) + '%')}</div>
                 </div>
             `).join('')}
         </div>
@@ -1381,10 +1381,30 @@ const getRiskBreakdown = (score, data) => {
     const factor = (score * 100) / (total || 1);
 
     return [
-        { label: 'Fan-out', value: s * factor, color: '#3b82f6' },
-        { label: 'Fan-in', value: g * factor, color: '#22c55e' },
-        { label: 'Peeling', value: p * factor, color: '#a855f7' },
-        { label: 'Rapid', value: r * factor, color: '#ef4444' }
+        {
+            label: 'Fan-out',
+            value: s * factor,
+            displayValue: isChain ? `${data.topPaths?.length || 0} Routes` : `${data.centrality?.outDegree || 0} Out`,
+            color: '#3b82f6'
+        },
+        {
+            label: 'Fan-in',
+            value: g * factor,
+            displayValue: isChain ? `${data.wallets?.filter(w => w.received > 5000).length || 0} Sources` : `${data.centrality?.inDegree || 0} Feeders`,
+            color: '#22c55e'
+        },
+        {
+            label: 'Peeling',
+            value: p * factor,
+            displayValue: isChain ? data.peelingReport?.avgPeeling : (data.peeling?.peelingPercent != null ? (100 - data.peeling.peelingPercent).toFixed(1) + '%' : 'N/A'),
+            color: '#a855f7'
+        },
+        {
+            label: 'Rapid',
+            value: r * factor,
+            displayValue: isChain ? (data.timeReport?.burst === 'Yes' ? 'Burst' : 'Steady') : (data.transactions?.incoming?.length > 10 ? 'Active' : 'Moderate'),
+            color: '#ef4444'
+        }
     ];
 };
 
@@ -1437,7 +1457,7 @@ const RiskPieChart = ({ score, data, size = 160 }) => {
                             <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: slice.color, boxShadow: `0 0 5px ${slice.color}` }} />
                             <span className="text-[var(--text-secondary)] font-bold uppercase tracking-wider">{slice.label}</span>
                         </div>
-                        <span className="text-white font-mono">{slice.value.toFixed(1)}%</span>
+                        <span className="text-white font-mono">{slice.displayValue || (slice.value.toFixed(1) + '%')}</span>
                     </div>
                 ))}
             </div>
