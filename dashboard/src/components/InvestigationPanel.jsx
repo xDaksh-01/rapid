@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     Search, AlertTriangle, ArrowDownLeft, ArrowUpRight,
     GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText, Percent
@@ -7,45 +7,105 @@ import {
 /**
  * Investigation Panel with clickable chain details
  */
-export default function InvestigationPanel({ context, chainStats, metadata, data, investigatedNodeData, onHighlightChain, onBack }) {
+export default function InvestigationPanel({ context, chainStats, metadata, data, investigatedNodeData, externalChainId, onHighlightChain, onWalletFocus, onBack }) {
     const [selectedChain, setSelectedChain] = useState(null);
+
+    // Sync external chain focus (from link clicks)
+    useEffect(() => {
+        if (externalChainId) {
+            setSelectedChain(externalChainId);
+            onHighlightChain?.(externalChainId);
+        }
+    }, [externalChainId, onHighlightChain]);
+
+    // Internal highlight sync
+    useEffect(() => {
+        if (selectedChain) {
+            onHighlightChain?.(selectedChain);
+        }
+    }, [selectedChain, onHighlightChain]);
 
     // Get chain details with all wallets and amounts
     const chainDetails = useMemo(() => {
-        if (!selectedChain || !data?.links) return null;
+        if (!selectedChain || !data?.links || !data?.nodes) return null;
 
         const chainLinks = data.links.filter(l => l.chainId === selectedChain);
         if (chainLinks.length === 0) return null;
 
-        // Build wallet flow
-        const wallets = new Map();
-        chainLinks.forEach(link => {
-            const src = link.source?.id || link.source;
-            const dst = link.target?.id || link.target;
-
-            if (!wallets.has(src)) {
-                wallets.set(src, { id: src, sent: 0, received: 0, hops: new Set() });
-            }
-            if (!wallets.has(dst)) {
-                wallets.set(dst, { id: dst, sent: 0, received: 0, hops: new Set() });
-            }
-
-            wallets.get(src).sent += link.amount;
-            wallets.get(src).hops.add(link.hopNumber || 0);
-            wallets.get(dst).received += link.amount;
-            wallets.get(dst).hops.add(link.hopNumber || 0);
+        // 1. Build local graph and find Forensic Root
+        // User Logic: Root node is where 2+ clean accounts have an edge with it.
+        const allWalletsInChain = new Set();
+        chainLinks.forEach(l => {
+            allWalletsInChain.add(l.source?.id || l.source);
+            allWalletsInChain.add(l.target?.id || l.target);
         });
 
-        // Sort by hop number
-        const walletList = Array.from(wallets.values())
-            .map(w => ({ ...w, minHop: Math.min(...w.hops), hops: Array.from(w.hops) }))
-            .sort((a, b) => a.minHop - b.minHop);
+        const nodeMap = new Map();
+        data.nodes.forEach(n => nodeMap.set(n.id, n));
+
+        let forensicRoot = null;
+        for (const walletId of allWalletsInChain) {
+            // Count clean incoming edges in GLOBAL context
+            const cleanInputs = data.links.filter(l => {
+                const target = l.target?.id || l.target;
+                const source = l.source?.id || l.source;
+                const sourceNode = nodeMap.get(source);
+                return target === walletId && sourceNode && sourceNode.suspicionScore < 0.4;
+            });
+
+            if (cleanInputs.length >= 2) {
+                forensicRoot = walletId;
+                break; // Found the starting point
+            }
+        }
+
+        // Fallback to naming convention if heuristic fails
+        if (!forensicRoot) {
+            forensicRoot = Array.from(allWalletsInChain).find(id => id.includes('_S0')) || Array.from(allWalletsInChain)[0];
+        }
+
+        // 2. Strict Sequential Tracing (A -> B -> C only)
+        // From a node, we only go to ONE next node (the primary flow)
+        const trail = [];
+        const visited = new Set();
+        let current = forensicRoot;
+        let hopCount = 0;
+
+        while (current && !visited.has(current)) {
+            visited.add(current);
+
+            // Calculate totals for this node within THIS chain
+            const incoming = chainLinks.filter(l => (l.target?.id || l.target) === current);
+            const outgoing = chainLinks.filter(l => (l.source?.id || l.source) === current);
+
+            const totalReceived = incoming.reduce((sum, l) => sum + l.amount, 0);
+            const totalSent = outgoing.reduce((sum, l) => sum + l.amount, 0);
+            const payers = Array.from(new Set(incoming.map(l => (l.source?.id || l.source).split('_').pop())));
+
+            trail.push({
+                id: current,
+                received: totalReceived,
+                sent: totalSent,
+                hop: hopCount++,
+                from: payers,
+                firstSeen: incoming.length > 0 ? Math.min(...incoming.map(l => l.timestamp ? new Date(l.timestamp).getTime() : Infinity)) : (outgoing.length > 0 ? Math.min(...outgoing.map(l => l.timestamp ? new Date(l.timestamp).getTime() : Infinity)) : 0)
+            });
+
+            // Find NEXT node: Greatest amount outgoing within chain
+            if (outgoing.length > 0) {
+                // Pick the single largest recipient as the "Next" node in the trail
+                const primaryLink = [...outgoing].sort((a, b) => b.amount - a.amount)[0];
+                current = primaryLink.target?.id || primaryLink.target;
+            } else {
+                current = null;
+            }
+        }
 
         return {
             chainId: selectedChain,
             initialAmount: chainLinks[0]?.initialAmount || 0,
             totalTx: chainLinks.length,
-            wallets: walletList
+            wallets: trail
         };
     }, [selectedChain, data]);
 
@@ -116,11 +176,15 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
         // Calculate correct volume (sum of incoming transactions)
         const incomingVolume = transactions?.incoming?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
 
-        // Get top 10 suspicious transactions
+        // Get top 10 transactions by time (newest first)
         const allTx = [
             ...(transactions?.incoming || []).map(tx => ({ ...tx, type: 'incoming', counterparty: tx.from })),
             ...(transactions?.outgoing || []).map(tx => ({ ...tx, type: 'outgoing', counterparty: tx.to }))
-        ].sort((a, b) => b.amount - a.amount).slice(0, 10);
+        ].sort((a, b) => {
+            const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+            const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+            return timeB - timeA;
+        }).slice(0, 10);
 
         const outgoingVolume = transactions?.outgoing?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
         const peelingPercentRaw = incomingVolume > 0 ? (outgoingVolume / incomingVolume) * 100 : null;
@@ -430,27 +494,34 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
                                 <thead className="bg-[var(--bg-primary)]">
                                     <tr>
                                         <th className="text-left p-2 text-[var(--text-secondary)]">Wallet</th>
+                                        <th className="text-left p-2 text-[var(--text-secondary)]">From</th>
                                         <th className="text-right p-2 text-[var(--text-secondary)]">Received</th>
                                         <th className="text-right p-2 text-[var(--text-secondary)]">Sent</th>
-                                        <th className="text-center p-2 text-[var(--text-secondary)]">Hop</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {chainDetails.wallets.map((wallet, i) => (
-                                        <tr key={wallet.id} className="border-t border-[var(--border-color)]">
+                                        <tr
+                                            key={wallet.id}
+                                            className="border-t border-[var(--border-color)] hover:bg-white/5 transition-colors cursor-pointer"
+                                            onMouseEnter={() => onWalletFocus?.(wallet.id)}
+                                            onMouseLeave={() => onWalletFocus?.(null)}
+                                        >
                                             <td className="p-2">
-                                                <span className="font-mono text-blue-400 truncate block max-w-[100px]" title={wallet.id}>
+                                                <span className="font-mono text-blue-400 truncate block max-w-[80px]" title={wallet.id}>
                                                     {wallet.id.split('_').slice(-2).join('_')}
                                                 </span>
                                             </td>
-                                            <td className="p-2 text-right text-green-400">
-                                                {wallet.received > 0 ? `+$${wallet.received.toFixed(2)}` : '-'}
+                                            <td className="p-2">
+                                                <span className="font-mono text-[var(--text-secondary)] truncate block max-w-[80px]" title={wallet.from.join(', ')}>
+                                                    {wallet.from.length > 0 ? wallet.from[0].split('_').pop() : '-'}
+                                                </span>
                                             </td>
-                                            <td className="p-2 text-right text-red-400">
-                                                {wallet.sent > 0 ? `-$${wallet.sent.toFixed(2)}` : '-'}
+                                            <td className="p-2 text-right text-green-400 font-medium">
+                                                {wallet.received > 0 ? `+$${wallet.received.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-'}
                                             </td>
-                                            <td className="p-2 text-center text-[var(--text-secondary)]">
-                                                {wallet.hops.join(',')}
+                                            <td className="p-2 text-right text-red-400 font-medium">
+                                                {wallet.sent > 0 ? `-$${wallet.sent.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '-'}
                                             </td>
                                         </tr>
                                     ))}
@@ -461,23 +532,34 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
 
                     {/* Visual Flow */}
                     <div className="space-y-2">
-                        <h3 className="text-sm font-medium text-white">Money Flow</h3>
+                        <h3 className="text-sm font-medium text-white">Sequential Money Trail</h3>
                         <div className="flex items-center flex-wrap gap-1 p-3 bg-[var(--bg-tertiary)] rounded-lg border border-[var(--border-color)]">
-                            {chainDetails.wallets.slice(0, 10).map((wallet, i) => (
-                                <div key={wallet.id} className="flex items-center">
-                                    <div
-                                        className={`px-2 py-1 rounded text-xs font-mono ${i === 0 ? 'bg-yellow-500/20 text-yellow-400' :
-                                            i === chainDetails.wallets.length - 1 ? 'bg-red-500/20 text-red-400' :
-                                                'bg-orange-500/20 text-orange-400'
-                                            }`}
-                                    >
-                                        {wallet.id.split('_').pop()}
+                            {chainDetails.wallets.slice(0, 10).map((wallet, i) => {
+                                const id = wallet.id;
+                                let label = wallet.hop === 0 ? 'Root' : wallet.hop === chainDetails.wallets.length - 1 ? 'End' : `Hop ${wallet.hop}`;
+
+                                // Override with naming convention if present and descriptive
+                                if (id.includes('_S0')) label = 'Source';
+                                else if (id.endsWith('_D')) label = 'Dest';
+                                else if (id.match(/_H(\d+)_/)) label = `Hop ${id.match(/_H(\d+)_/)[1]}`;
+
+                                return (
+                                    <div key={wallet.id} className="flex items-center">
+                                        <div
+                                            className={`px-2 py-1 rounded text-xs font-mono ${label === 'Source' || label === 'Root' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                label === 'Dest' || label === 'End' ? 'bg-red-500/20 text-red-400' :
+                                                    'bg-orange-500/20 text-orange-400'
+                                                }`}
+                                            title={wallet.id}
+                                        >
+                                            {label}
+                                        </div>
+                                        {i < Math.min(chainDetails.wallets.length - 1, 9) && (
+                                            <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
+                                        )}
                                     </div>
-                                    {i < chainDetails.wallets.length - 1 && i < 9 && (
-                                        <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
-                                    )}
-                                </div>
-                            ))}
+                                );
+                            })}
                             {chainDetails.wallets.length > 10 && (
                                 <span className="text-xs text-[var(--text-secondary)]">+{chainDetails.wallets.length - 10} more</span>
                             )}
@@ -494,6 +576,21 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
                     >
                         ← Back to All Chains
                     </button>
+                </div>
+            </div>
+        );
+    }
+
+    // If no context or node, and no chain selected, show empty state
+    if (!context || !context.node) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center text-[var(--text-secondary)] space-y-4">
+                <div className="p-4 bg-[var(--bg-tertiary)] rounded-full border border-[var(--border-color)]">
+                    <Activity className="w-8 h-8 opacity-20" />
+                </div>
+                <div>
+                    <h3 className="text-white font-medium mb-1">Investigation Ready</h3>
+                    <p className="text-sm">Select a node or transaction edge on the graph to view the forensic trail.</p>
                 </div>
             </div>
         );

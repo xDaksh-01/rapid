@@ -11,6 +11,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [investigatedNode, setInvestigatedNode] = useState(null);
+  const [focusedChainId, setFocusedChainId] = useState(null);
+  const [highlightedChainId, setHighlightedChainId] = useState(null);
+  const [activeWalletId, setActiveWalletId] = useState(null);
   const [threshold, setThreshold] = useState(0);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
@@ -80,7 +83,7 @@ function App() {
       const src = l.source?.id || l.source;
       const tgt = l.target?.id || l.target;
       const nodeId = investigatedNode.id;
-      
+
       return src === nodeId || tgt === nodeId;
     });
 
@@ -117,6 +120,8 @@ function App() {
 
   const handleNodeClick = useCallback((node) => {
     setInvestigatedNode(node);
+    setFocusedChainId(null); // Reset chain focus when clicking a node
+    setHighlightedChainId(null);
     setRightPaneCollapsed(false);  // Auto-expand right pane
   }, []);
 
@@ -158,12 +163,12 @@ function App() {
           <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
           <div className="mt-2">
             {selectedTab === 'Filter' && (
-                <FilterPanel
-                  threshold={threshold}
-                  onThresholdChange={setThreshold}
-                  metadata={mergedMetadata}
-                  embedded
-                />
+              <FilterPanel
+                threshold={threshold}
+                onThresholdChange={setThreshold}
+                metadata={mergedMetadata}
+                embedded
+              />
             )}
           </div>
         </div>
@@ -174,6 +179,8 @@ function App() {
           onNodeClick={handleNodeClick}
           onInvestigateNode={handleInvestigateNode}
           onGraphDataUpdate={setFilteredGraphData}
+          highlightedChainId={highlightedChainId}
+          activeWalletId={activeWalletId}
           width={leftPaneWidth}
           height={dimensions.height}
         />
@@ -215,7 +222,14 @@ function App() {
             metadata={data?.metadata}
             data={data}
             investigatedNodeData={investigatedNode}
-            onBack={() => setInvestigatedNode(null)}
+            externalChainId={focusedChainId}
+            onHighlightChain={setHighlightedChainId}
+            onWalletFocus={setActiveWalletId}
+            onBack={() => {
+              setInvestigatedNode(null);
+              setFocusedChainId(null);
+              setHighlightedChainId(null);
+            }}
           />
         )}
       </div>

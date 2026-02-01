@@ -12,7 +12,9 @@ export default function ForceGraph({
     onInvestigateNode,
     width,
     height,
-    onGraphDataUpdate
+    onGraphDataUpdate,
+    activeWalletId,
+    highlightedChainId
 }) {
     const graphRef = useRef();
     const [hoveredNode, setHoveredNode] = useState(null);
@@ -99,15 +101,23 @@ export default function ForceGraph({
         const score = node.suspicionScore || 0;
         const volume = node.volume || 1;
         const isHovered = hoveredNode?.id === node.id;
+        const isActiveWallet = activeWalletId === node.id;
+        const isInHighlightedChain = highlightedChainId && data.links.some(l => l.chainId === highlightedChainId && (l.source.id === node.id || l.target.id === node.id));
 
         let baseRadius = Math.max(6, Math.min(25, Math.log(volume + 1) * 3));
-        if (isHovered) baseRadius *= 1.3;
+        if (isHovered || isActiveWallet) baseRadius *= 1.3;
         const radius = baseRadius / globalScale;
 
         let color = score > 0.7 ? '#ef4444' : score > 0.4 ? '#eab308' : '#22c55e';
 
         // Glow
-        if (score > 0.7) {
+        if (isActiveWallet) {
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#00ffff'; // Bright Cyan for focused wallet
+        } else if (isInHighlightedChain) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#a855f7'; // Purple glow
+        } else if (score > 0.7) {
             const pulse = 0.5 + Math.sin(pulseFactor * Math.PI) * 0.5;
             ctx.shadowBlur = 15 + pulse * 15;
             ctx.shadowColor = `rgba(239, 68, 68, ${0.6 + pulse * 0.4})`;
@@ -122,13 +132,14 @@ export default function ForceGraph({
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.fill();
-        ctx.strokeStyle = isHovered ? '#ffffff' : 'rgba(255,255,255,0.5)';
-        ctx.lineWidth = (isHovered ? 3 : 1.5) / globalScale;
+
+        ctx.strokeStyle = isActiveWallet ? '#00ffff' : (isInHighlightedChain ? '#a855f7' : (isHovered ? '#ffffff' : 'rgba(255,255,255,0.5)'));
+        ctx.lineWidth = (isActiveWallet ? 5 : (isInHighlightedChain ? 4 : (isHovered ? 3 : 1.5))) / globalScale;
         ctx.stroke();
         ctx.shadowBlur = 0;
 
-        // Label when zoomed
-        if (globalScale > 0.8 || isHovered) {
+        // Label when zoomed or active
+        if (globalScale > 0.8 || isHovered || isActiveWallet) {
             const label = node.id.split('_').slice(-2).join('_');
             ctx.font = `bold ${Math.max(10, 12 / globalScale)}px Inter, sans-serif`;
             ctx.textAlign = 'center';
@@ -146,29 +157,35 @@ export default function ForceGraph({
         const end = link.target;
         if (!start?.x || !end?.x) return;
 
+        const isHighlighted = highlightedChainId && link.chainId === highlightedChainId;
+
         const gradient = ctx.createLinearGradient(start.x, start.y, end.x, end.y);
-        const getColor = (s) => s > 0.7 ? 'rgba(239,68,68,0.8)' : s > 0.4 ? 'rgba(234,179,8,0.7)' : 'rgba(34,197,94,0.6)';
-        gradient.addColorStop(0, getColor(link.sourceScore || 0));
-        gradient.addColorStop(1, getColor(link.targetScore || 0));
+        const getColor = (s, opacity = 0.6) => {
+            if (isHighlighted) return `rgba(168, 85, 247, 0.9)`; // Purple for highlight
+            return s > 0.7 ? `rgba(239,68,68,${opacity})` : s > 0.4 ? `rgba(234,179,8,${opacity})` : `rgba(34,197,94,${opacity})`;
+        };
+
+        gradient.addColorStop(0, getColor(link.sourceScore || 0, isHighlighted ? 0.9 : 0.6));
+        gradient.addColorStop(1, getColor(link.targetScore || 0, isHighlighted ? 0.9 : 0.6));
 
         ctx.beginPath();
         ctx.moveTo(start.x, start.y);
         ctx.lineTo(end.x, end.y);
         ctx.strokeStyle = gradient;
-        ctx.lineWidth = Math.max(1.5, Math.log(link.amount + 1) * 0.8) / globalScale;
+        ctx.lineWidth = (isHighlighted ? 4 : Math.max(1.5, Math.log(link.amount + 1) * 0.8)) / globalScale;
         ctx.stroke();
 
         // Arrow
         const dx = end.x - start.x, dy = end.y - start.y;
         const angle = Math.atan2(dy, dx);
         const arrowX = start.x + dx * 0.75, arrowY = start.y + dy * 0.75;
-        const al = 8 / globalScale;
+        const al = (isHighlighted ? 12 : 8) / globalScale;
         ctx.beginPath();
         ctx.moveTo(arrowX + al * Math.cos(angle), arrowY + al * Math.sin(angle));
-        ctx.lineTo(arrowX - 3 / globalScale * Math.cos(angle - Math.PI / 2), arrowY - 3 / globalScale * Math.sin(angle - Math.PI / 2));
-        ctx.lineTo(arrowX - 3 / globalScale * Math.cos(angle + Math.PI / 2), arrowY - 3 / globalScale * Math.sin(angle + Math.PI / 2));
+        ctx.lineTo(arrowX - 5 / globalScale * Math.cos(angle - Math.PI / 2), arrowY - 5 / globalScale * Math.sin(angle - Math.PI / 2));
+        ctx.lineTo(arrowX - 5 / globalScale * Math.cos(angle + Math.PI / 2), arrowY - 5 / globalScale * Math.sin(angle + Math.PI / 2));
         ctx.closePath();
-        ctx.fillStyle = getColor(link.targetScore || 0);
+        ctx.fillStyle = getColor(link.targetScore || 0, 0.9);
         ctx.fill();
     }, []);
 
@@ -206,7 +223,7 @@ export default function ForceGraph({
     }, [hoveredNode, nodeTransactions]);
 
     return (
-        <div 
+        <div
             className="relative w-full h-full"
             onMouseMove={(e) => setMousePos({ x: e.clientX, y: e.clientY })}
         >
@@ -230,7 +247,7 @@ export default function ForceGraph({
                             borderRight: '8px solid rgba(30, 30, 35, 0.95)'
                         }}
                     />
-                    
+
                     <div className="font-mono text-blue-400 font-bold mb-2 truncate">
                         {tooltipContent.id}
                     </div>
