@@ -137,7 +137,8 @@ export function getWalletTransactions(nodeId, links) {
                 to: dst,
                 amount: link.amount,
                 chainId: link.chainId,
-                hopNumber: link.hopNumber
+                hopNumber: link.hopNumber,
+                timestamp: link.timestamp
             });
         }
 
@@ -147,10 +148,78 @@ export function getWalletTransactions(nodeId, links) {
                 to: dst,
                 amount: link.amount,
                 chainId: link.chainId,
-                hopNumber: link.hopNumber
+                hopNumber: link.hopNumber,
+                timestamp: link.timestamp
             });
         }
     });
 
     return { incoming, outgoing };
+}
+
+/**
+ * Compute total incoming and outgoing amounts from links for peeling % (network-level).
+ * Total Incoming = sum of amounts received (link.target).
+ * Total Outgoing = sum of amounts sent (link.source).
+ * Peeling % = (Total Outgoing / Total Incoming) × 100.
+ */
+export function getPeelingTotals(links) {
+    if (!links || links.length === 0) {
+        return { totalIncoming: 0, totalOutgoing: 0, peelingPercent: null };
+    }
+    let totalIncoming = 0;
+    let totalOutgoing = 0;
+    links.forEach(link => {
+        const amount = Number(link.amount) || 0;
+        totalIncoming += amount; // each link amount is "incoming" to target
+        totalOutgoing += amount; // each link amount is "outgoing" from source
+    });
+    const peelingPercent = totalIncoming > 0
+        ? (totalOutgoing / totalIncoming) * 100
+        : null;
+    return { totalIncoming, totalOutgoing, peelingPercent };
+}
+
+/**
+ * Compute peeling % at each node: for every node, Total Incoming = sum of link amounts where
+ * node is target; Total Outgoing = sum where node is source; Peeling % = (Outgoing/Incoming)×100.
+ * Returns array of { nodeId, node, totalIncoming, totalOutgoing, peelingPercent } for each node.
+ */
+export function getPeelingByNode(nodes, links) {
+    if (!nodes?.length || !links?.length) return [];
+
+    const incomingByNode = {};
+    const outgoingByNode = {};
+    nodes.forEach(n => {
+        const id = n.id ?? n;
+        incomingByNode[id] = 0;
+        outgoingByNode[id] = 0;
+    });
+
+    links.forEach(link => {
+        const amount = Number(link.amount) || 0;
+        const src = link.source?.id ?? link.source;
+        const dst = link.target?.id ?? link.target;
+        if (outgoingByNode[src] !== undefined) outgoingByNode[src] += amount;
+        if (incomingByNode[dst] !== undefined) incomingByNode[dst] += amount;
+    });
+
+    const nodeMap = {};
+    nodes.forEach(n => { nodeMap[n.id] = n; });
+
+    return nodes.map(node => {
+        const nodeId = node.id;
+        const totalIncoming = incomingByNode[nodeId] ?? 0;
+        const totalOutgoing = outgoingByNode[nodeId] ?? 0;
+        const peelingPercent = totalIncoming > 0
+            ? (totalOutgoing / totalIncoming) * 100
+            : null;
+        return {
+            nodeId,
+            node,
+            totalIncoming,
+            totalOutgoing,
+            peelingPercent
+        };
+    });
 }

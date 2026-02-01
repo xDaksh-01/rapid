@@ -6,11 +6,15 @@ import { Filter, AlertTriangle, Users } from 'lucide-react';
 export default function FilterPanel({
     threshold,
     onThresholdChange,
-    metadata
+    metadata,
+    embedded = false
 }) {
     console.log('FilterPanel metadata:', metadata);
+    const containerClass = embedded
+        ? 'w-80 glass rounded-xl p-4 space-y-4'
+        : 'absolute top-4 left-4 w-80 glass rounded-xl p-4 z-40 space-y-4';
     return (
-        <div className="absolute top-4 left-4 w-80 glass rounded-xl p-4 z-40 space-y-4">
+        <div className={containerClass}>
             {/* Header */}
             <div className="flex items-center gap-2">
                 <Filter className="w-5 h-5 text-[var(--accent-blue)]" />

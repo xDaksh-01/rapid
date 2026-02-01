@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ForceGraph from './components/ForceGraph';
 import FilterPanel from './components/FilterPanel';
+import TopTabs from './components/TopTabs';
 import InvestigationPanel from './components/InvestigationPanel';
 import { Loader2, AlertTriangle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { calculateCentrality, getWalletTransactions } from './utils/graphUtils';
@@ -10,9 +11,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [investigatedNode, setInvestigatedNode] = useState(null);
+  const [focusedChainId, setFocusedChainId] = useState(null);
+  const [highlightedChainId, setHighlightedChainId] = useState(null);
+  const [activeWalletId, setActiveWalletId] = useState(null);
+  const [focusNodeId, setFocusNodeId] = useState(null);
   const [threshold, setThreshold] = useState(0);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
+  const [filteredGraphData, setFilteredGraphData] = useState(null);
+  const [selectedTab, setSelectedTab] = useState('Overview');
 
   const leftPaneWidth = rightPaneCollapsed ? dimensions.width - 48 : Math.floor(dimensions.width * 0.6);
   const rightPaneWidth = rightPaneCollapsed ? 48 : dimensions.width - leftPaneWidth;
@@ -65,28 +72,62 @@ function App() {
     return merged;
   }, [data?.metadata, filterStats]);
 
-  // Compute investigation context
+  // Compute investigation context with filtered transactions (only direct neighbors in visible graph)
   const investigationContext = useMemo(() => {
-    if (!investigatedNode || !data) return null;
+    if (!investigatedNode || !filteredGraphData) return null;
 
-    const centrality = calculateCentrality(investigatedNode.id, data.links);
-    const transactions = getWalletTransactions(investigatedNode.id, data.links);
+    // Use the filtered graph data that's actually being displayed
+    const visibleLinks = filteredGraphData.links;
+
+    // Get ONLY direct neighbors of the investigated node from visible links
+    const directLinks = visibleLinks.filter(l => {
+      const src = l.source?.id || l.source;
+      const tgt = l.target?.id || l.target;
+      const nodeId = investigatedNode.id;
+
+      return src === nodeId || tgt === nodeId;
+    });
+
+    console.log('Investigation node:', investigatedNode.id);
+    console.log('Visible graph has', filteredGraphData.nodes.length, 'nodes and', filteredGraphData.links.length, 'links');
+    console.log('Direct links from node:', directLinks.length);
+    directLinks.forEach(l => {
+      const src = l.source?.id || l.source;
+      const tgt = l.target?.id || l.target;
+      console.log(`Link: ${src} -> ${tgt}`);
+    });
+
+    const centrality = calculateCentrality(investigatedNode.id, directLinks);
+    const transactions = getWalletTransactions(investigatedNode.id, directLinks);
+
+    // Peeling % at this node: (Total Outgoing / Total Incoming) × 100
+    const totalIncoming = (transactions.incoming || []).reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+    const totalOutgoing = (transactions.outgoing || []).reduce((s, tx) => s + (Number(tx.amount) || 0), 0);
+    const peelingPercent = totalIncoming > 0 ? (totalOutgoing / totalIncoming) * 100 : null;
 
     return {
       node: investigatedNode,
       centrality,
       transactions,
+      peeling: { totalIncoming, totalOutgoing, peelingPercent },
       status: investigatedNode.suspicionScore > 0.7 ? 'Illicit' :
         investigatedNode.suspicionScore > 0.4 ? 'Suspected' : 'Licit'
     };
-  }, [investigatedNode, data]);
+  }, [investigatedNode, filteredGraphData]);
 
   const handleInvestigateNode = useCallback((node) => {
     setInvestigatedNode(node);
   }, []);
 
+  const handleWalletClick = useCallback((id) => {
+    setFocusNodeId({ id, ts: Date.now() });
+  }, []);
+
   const handleNodeClick = useCallback((node) => {
     setInvestigatedNode(node);
+    setFocusedChainId(null); // Reset chain focus when clicking a node
+    setHighlightedChainId(null);
+    setRightPaneCollapsed(false);  // Auto-expand right pane
   }, []);
 
   if (loading) {
@@ -122,17 +163,30 @@ function App() {
           </div>
         </div>
 
-        <FilterPanel
-          threshold={threshold}
-          onThresholdChange={setThreshold}
-          metadata={mergedMetadata}
-        />
+        {/* Tabs + Filter tab */}
+        <div className="absolute top-4 left-4 z-50">
+          <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
+          <div className="mt-2">
+            {selectedTab === 'Filter' && (
+              <FilterPanel
+                threshold={threshold}
+                onThresholdChange={setThreshold}
+                metadata={mergedMetadata}
+                embedded
+              />
+            )}
+          </div>
+        </div>
 
         <ForceGraph
           data={data}
           threshold={threshold}
           onNodeClick={handleNodeClick}
           onInvestigateNode={handleInvestigateNode}
+          onGraphDataUpdate={setFilteredGraphData}
+          highlightedChainId={highlightedChainId}
+          activeWalletId={activeWalletId}
+          focusNodeId={focusNodeId}
           width={leftPaneWidth}
           height={dimensions.height}
         />
@@ -142,7 +196,6 @@ function App() {
           <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Legend</h4>
           <div className="space-y-1.5 text-xs">
             <LegendItem color="bg-red-500" glow label="Known Illicit (score > 0.7)" />
-            <LegendItem color="bg-yellow-500" label="Suspected Mule (0.4-0.7)" />
             <LegendItem color="bg-green-500" label="Clean Account (< 0.4)" />
             <LegendItem color="border-2 border-yellow-500 bg-transparent" label="Seed / Investigated Node" />
           </div>
@@ -173,7 +226,16 @@ function App() {
             chainStats={data?.chainStats}
             metadata={data?.metadata}
             data={data}
-            onBack={() => setInvestigatedNode(null)}
+            investigatedNodeData={investigatedNode}
+            externalChainId={focusedChainId}
+            onHighlightChain={setHighlightedChainId}
+            onWalletFocus={setActiveWalletId}
+            onWalletClick={handleWalletClick}
+            onBack={() => {
+              setInvestigatedNode(null);
+              setFocusedChainId(null);
+              setHighlightedChainId(null);
+            }}
           />
         )}
       </div>

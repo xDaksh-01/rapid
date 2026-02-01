@@ -6,55 +6,58 @@ import { FileText, AlertTriangle, Clock, GitBranch, DollarSign, Users, ArrowRigh
  * Provides automated analysis of laundering chains.
  */
 export default function AuditLog({ data, chainAnalysis, selectedNode }) {
-    // Compute temporal analysis
-    const temporalAnalysis = useMemo(() => {
+    // Compute wallet flow with full details
+    const walletFlows = useMemo(() => {
         if (!data?.links) return [];
 
-        const chainLinks = data.links.filter(l => l.chainId && l.hopNumber > 0);
-        const byChain = {};
+        const flows = [];
+        const chainMap = new Map();
 
-        chainLinks.forEach(link => {
-            if (!byChain[link.chainId]) byChain[link.chainId] = [];
-            byChain[link.chainId].push(link);
+        // Group all links by chain and sort by hop
+        data.links.forEach(link => {
+            if (link.chainId) {
+                if (!chainMap.has(link.chainId)) {
+                    chainMap.set(link.chainId, []);
+                }
+                chainMap.get(link.chainId).push(link);
+            }
         });
 
-        return Object.entries(byChain).map(([chainId, links]) => {
-            const sortedByHop = links.sort((a, b) => a.hopNumber - b.hopNumber);
-            const hops = sortedByHop.map((l, i) => ({
-                hop: l.hopNumber,
-                amount: l.amount,
-                fee: i > 0 ? (sortedByHop[i - 1].amount - l.amount).toFixed(4) : 0
-            }));
-
-            return {
+        // Build complete trails for each chain
+        chainMap.forEach((links, chainId) => {
+            const sortedLinks = links.sort((a, b) => (a.hopNumber || 0) - (b.hopNumber || 0));
+            flows.push({
                 chainId,
-                initialAmount: links[0]?.initialAmount || 0,
-                hops,
-                totalHops: Math.max(...links.map(l => l.hopNumber))
-            };
-        }).slice(0, 5); // Limit for display
+                initialAmount: sortedLinks[0]?.initialAmount || 0,
+                links: sortedLinks,
+                totalHops: sortedLinks.length
+            });
+        });
+
+        return flows.sort((a, b) => b.initialAmount - a.initialAmount).slice(0, 5);
     }, [data]);
 
     // Peeling chain detection
     const peelingChains = useMemo(() => {
-        if (!temporalAnalysis.length) return [];
+        if (!walletFlows.length) return [];
 
-        return temporalAnalysis.map(chain => {
+        return walletFlows.map(flow => {
             let totalFees = 0;
-            const feeBreakdown = chain.hops.map(hop => {
-                totalFees += parseFloat(hop.fee) || 0;
-                return { hop: hop.hop, fee: hop.fee, amount: hop.amount };
-            }).filter(h => h.fee > 0);
+            const feeBreakdown = flow.links.map((link, i) => {
+                const fee = i > 0 ? (flow.links[i - 1].amount - link.amount) : 0;
+                totalFees += fee;
+                return { hop: link.hopNumber, fee: fee.toFixed(4), amount: link.amount };
+            }).filter(h => parseFloat(h.fee) > 0);
 
             return {
-                chainId: chain.chainId,
-                initial: chain.initialAmount,
+                chainId: flow.chainId,
+                initial: flow.initialAmount,
                 totalFees: totalFees.toFixed(4),
-                feePercent: ((totalFees / chain.initialAmount) * 100).toFixed(2),
+                feePercent: ((totalFees / flow.initialAmount) * 100).toFixed(2),
                 breakdown: feeBreakdown
             };
         });
-    }, [temporalAnalysis]);
+    }, [walletFlows]);
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
@@ -155,44 +158,46 @@ export default function AuditLog({ data, chainAnalysis, selectedNode }) {
                     </div>
                 </div>
 
-                {/* Temporal Log */}
+                {/* Wallet Flow (Directed Paths) */}
                 <div className="space-y-2">
                     <h3 className="text-sm font-medium text-white flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-cyan-400" />
-                        Temporal Log
+                        <ArrowRight className="w-4 h-4 text-blue-400" />
+                        Wallet Flow (Ordered by Hop)
                     </h3>
 
-                    <div className="bg-[var(--bg-tertiary)] rounded-lg p-3 border border-[var(--border-color)]">
-                        <div className="space-y-2">
-                            {temporalAnalysis.slice(0, 3).map((chain, i) => (
-                                <div key={chain.chainId} className="text-xs">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="font-mono text-purple-400">{chain.chainId.slice(0, 12)}</span>
-                                        <span className="text-[var(--text-secondary)]">→</span>
-                                        <span className="text-cyan-400">{chain.totalHops} hops</span>
-                                    </div>
-                                    {/* Timeline visualization */}
-                                    <div className="flex items-center gap-1 pl-2">
-                                        {chain.hops.slice(0, 8).map((hop, j) => (
-                                            <div key={j} className="flex items-center">
-                                                <div
-                                                    className="w-2 h-2 rounded-full"
-                                                    style={{
-                                                        backgroundColor: `hsl(${120 - (hop.hop / chain.totalHops) * 120}, 70%, 50%)`
-                                                    }}
-                                                />
-                                                {j < chain.hops.length - 1 && (
-                                                    <div className="w-4 h-0.5 bg-[var(--border-color)]" />
-                                                )}
-                                            </div>
-                                        ))}
-                                        {chain.hops.length > 8 && (
-                                            <span className="text-[var(--text-secondary)]">+{chain.hops.length - 8}</span>
-                                        )}
-                                    </div>
+                    <div className="space-y-3">
+                        {walletFlows.slice(0, 3).map((flow) => (
+                            <div key={flow.chainId} className="bg-red-500/5 border border-red-500/30 rounded-lg p-3 space-y-2">
+                                {/* Chain header */}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-mono text-red-400">Chain: {flow.chainId}</span>
+                                    <span className="text-xs text-[var(--text-secondary)]">${flow.initialAmount.toLocaleString()} • {flow.totalHops} hops</span>
                                 </div>
-                            ))}
-                        </div>
+
+                                {/* Wallet trail */}
+                                <div className="space-y-1">
+                                    {flow.links.slice(0, 5).map((link, idx) => {
+                                        const source = link.source?.id || link.source;
+                                        const target = link.target?.id || link.target;
+                                        
+                                        return (
+                                            <div key={idx} className="text-xs">
+                                                <div className="flex items-center gap-1 text-[var(--text-secondary)]">
+                                                    <span className="bg-red-500/30 text-red-300 px-1.5 py-0.5 rounded font-mono">Hop {link.hopNumber}</span>
+                                                    <span className="font-mono text-white truncate max-w-[100px]" title={source}>{source?.slice(0, 12)}</span>
+                                                    <span className="text-blue-400">→</span>
+                                                    <span className="font-mono text-white truncate max-w-[100px]" title={target}>{target?.slice(0, 12)}</span>
+                                                    <span className="text-yellow-400 ml-auto">${link.amount.toFixed(4)}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    {flow.links.length > 5 && (
+                                        <div className="text-xs text-[var(--text-secondary)] px-1.5">... +{flow.links.length - 5} more hops</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
