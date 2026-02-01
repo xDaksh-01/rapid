@@ -1,13 +1,14 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     Search, AlertTriangle, ArrowDownLeft, ArrowUpRight,
-    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText, Percent
+    GitBranch, DollarSign, Users, Zap, Activity, X, ChevronRight, Zap as Lightning, FileText, Percent,
+    TrendingUp, ArrowRight
 } from 'lucide-react';
 
 /**
  * Investigation Panel with clickable chain details
  */
-export default function InvestigationPanel({ context, chainStats, metadata, data, investigatedNodeData, externalChainId, onHighlightChain, onWalletFocus, onBack }) {
+export default function InvestigationPanel({ context, chainStats, metadata, data, investigatedNodeData, externalChainId, onHighlightChain, onWalletFocus, onWalletClick, onBack }) {
     const [selectedChain, setSelectedChain] = useState(null);
 
     // Sync external chain focus (from link clicks)
@@ -101,11 +102,44 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
             }
         }
 
+        // 3. Find Top 5 High-Volume Paths (Branching Analysis)
+        const adj = new Map();
+        chainLinks.forEach(l => {
+            const s = l.source?.id || l.source;
+            const t = l.target?.id || l.target;
+            if (!adj.has(s)) adj.set(s, []);
+            adj.get(s).push({ target: t, amount: l.amount });
+        });
+
+        const allPaths = [];
+        const findPaths = (currentId, pathNodes, minAmount) => {
+            const neighbors = adj.get(currentId) || [];
+            if (neighbors.length === 0) {
+                if (pathNodes.length > 1) {
+                    allPaths.push({ nodes: pathNodes, flow: minAmount });
+                }
+                return;
+            }
+
+            neighbors.forEach(n => {
+                if (!pathNodes.includes(n.target)) { // Avoid cycles
+                    findPaths(n.target, [...pathNodes, n.target], Math.min(minAmount, n.amount));
+                }
+            });
+        };
+
+        findPaths(forensicRoot, [forensicRoot], Infinity);
+
+        const topPaths = allPaths
+            .sort((a, b) => b.flow - a.flow)
+            .slice(0, 5);
+
         return {
             chainId: selectedChain,
             initialAmount: chainLinks[0]?.initialAmount || 0,
             totalTx: chainLinks.length,
-            wallets: trail
+            wallets: trail,
+            topPaths: topPaths
         };
     }, [selectedChain, data]);
 
@@ -506,6 +540,7 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
                                             className="border-t border-[var(--border-color)] hover:bg-white/5 transition-colors cursor-pointer"
                                             onMouseEnter={() => onWalletFocus?.(wallet.id)}
                                             onMouseLeave={() => onWalletFocus?.(null)}
+                                            onClick={() => onWalletClick?.(wallet.id)}
                                         >
                                             <td className="p-2">
                                                 <span className="font-mono text-blue-400 truncate block max-w-[80px]" title={wallet.id}>
@@ -530,41 +565,52 @@ ${status === 'Illicit' ? '🔴 IMMEDIATE ACTION REQUIRED - Flag for compliance r
                         </div>
                     </div>
 
-                    {/* Visual Flow */}
-                    <div className="space-y-2">
-                        <h3 className="text-sm font-medium text-white">Sequential Money Trail</h3>
-                        <div className="flex items-center flex-wrap gap-1 p-3 bg-[var(--bg-tertiary)] rounded-lg border border-[var(--border-color)]">
-                            {chainDetails.wallets.slice(0, 10).map((wallet, i) => {
-                                const id = wallet.id;
-                                let label = wallet.hop === 0 ? 'Root' : wallet.hop === chainDetails.wallets.length - 1 ? 'End' : `Hop ${wallet.hop}`;
-
-                                // Override with naming convention if present and descriptive
-                                if (id.includes('_S0')) label = 'Source';
-                                else if (id.endsWith('_D')) label = 'Dest';
-                                else if (id.match(/_H(\d+)_/)) label = `Hop ${id.match(/_H(\d+)_/)[1]}`;
-
-                                return (
-                                    <div key={wallet.id} className="flex items-center">
-                                        <div
-                                            className={`px-2 py-1 rounded text-xs font-mono ${label === 'Source' || label === 'Root' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                label === 'Dest' || label === 'End' ? 'bg-red-500/20 text-red-400' :
-                                                    'bg-orange-500/20 text-orange-400'
-                                                }`}
-                                            title={wallet.id}
-                                        >
-                                            {label}
+                    {/* Top 5 High-Volume Paths */}
+                    {chainDetails.topPaths && chainDetails.topPaths.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <TrendingUp className="w-5 h-5 text-purple-400" />
+                                <h3 className="text-base font-semibold text-white">Forensic Money Routes</h3>
+                            </div>
+                            <div className="space-y-3">
+                                {chainDetails.topPaths.map((path, idx) => (
+                                    <div key={idx} className="bg-[var(--bg-tertiary)] p-4 rounded-xl border border-purple-500/20 hover:border-purple-500/50 transition-all shadow-lg shadow-purple-500/5">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <span className="text-xs font-bold uppercase tracking-widest text-purple-400">Route #{idx + 1}</span>
                                         </div>
-                                        {i < Math.min(chainDetails.wallets.length - 1, 9) && (
-                                            <ChevronRight className="w-4 h-4 text-[var(--text-secondary)]" />
-                                        )}
+                                        <div className="flex items-center justify-between gap-1 w-full overflow-x-auto no-scrollbar py-1">
+                                            {path.nodes.map((node, i) => (
+                                                <div key={i} className="flex flex-1 items-center min-w-fit">
+                                                    <div className="flex flex-col items-center gap-1 flex-1">
+                                                        <span
+                                                            className={`px-3 py-2 rounded-lg text-xs font-mono font-bold border text-center transition-all cursor-pointer ${i === 0 ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400' :
+                                                                    i === path.nodes.length - 1 ? 'bg-red-500/20 border-red-500/40 text-red-400' :
+                                                                        'bg-[var(--bg-primary)] border-blue-500/30 text-blue-400'
+                                                                } hover:scale-105 active:scale-95`}
+                                                            onMouseEnter={() => onWalletFocus?.(node)}
+                                                            onMouseLeave={() => onWalletFocus?.(null)}
+                                                            onClick={() => onWalletClick?.(node)}
+                                                            title={node}
+                                                        >
+                                                            {node.split('_').pop()}
+                                                        </span>
+                                                        <span className="text-[9px] text-[var(--text-secondary)] uppercase font-bold">
+                                                            {i === 0 ? 'Root' : i === path.nodes.length - 1 ? 'Dest' : `H${i}`}
+                                                        </span>
+                                                    </div>
+                                                    {i < path.nodes.length - 1 && (
+                                                        <div className="px-1 opacity-40">
+                                                            <ArrowRight className="w-4 h-4 text-white" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                );
-                            })}
-                            {chainDetails.wallets.length > 10 && (
-                                <span className="text-xs text-[var(--text-secondary)]">+{chainDetails.wallets.length - 10} more</span>
-                            )}
+                                ))}
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Back Button */}
                     <button

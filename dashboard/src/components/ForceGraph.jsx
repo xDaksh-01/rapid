@@ -14,12 +14,24 @@ export default function ForceGraph({
     height,
     onGraphDataUpdate,
     activeWalletId,
+    focusNodeId,
     highlightedChainId
 }) {
     const graphRef = useRef();
     const [hoveredNode, setHoveredNode] = useState(null);
     const [pulseFactor, setPulseFactor] = useState(1);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+    // Auto-focus logic
+    useEffect(() => {
+        if (focusNodeId?.id && graphRef.current && data?.nodes) {
+            const node = data.nodes.find(n => n.id === focusNodeId.id);
+            if (node && node.x && node.y) {
+                graphRef.current.centerAt(node.x, node.y, 800);
+                graphRef.current.zoom(4, 900); // Zoom in a bit more and slightly slower for comfort
+            }
+        }
+    }, [focusNodeId, data]);
 
     // Pulsing animation
     useEffect(() => {

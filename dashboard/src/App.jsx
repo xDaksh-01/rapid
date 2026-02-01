@@ -14,6 +14,7 @@ function App() {
   const [focusedChainId, setFocusedChainId] = useState(null);
   const [highlightedChainId, setHighlightedChainId] = useState(null);
   const [activeWalletId, setActiveWalletId] = useState(null);
+  const [focusNodeId, setFocusNodeId] = useState(null);
   const [threshold, setThreshold] = useState(0);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
@@ -118,6 +119,10 @@ function App() {
     setInvestigatedNode(node);
   }, []);
 
+  const handleWalletClick = useCallback((id) => {
+    setFocusNodeId({ id, ts: Date.now() });
+  }, []);
+
   const handleNodeClick = useCallback((node) => {
     setInvestigatedNode(node);
     setFocusedChainId(null); // Reset chain focus when clicking a node
@@ -181,6 +186,7 @@ function App() {
           onGraphDataUpdate={setFilteredGraphData}
           highlightedChainId={highlightedChainId}
           activeWalletId={activeWalletId}
+          focusNodeId={focusNodeId}
           width={leftPaneWidth}
           height={dimensions.height}
         />
@@ -225,6 +231,7 @@ function App() {
             externalChainId={focusedChainId}
             onHighlightChain={setHighlightedChainId}
             onWalletFocus={setActiveWalletId}
+            onWalletClick={handleWalletClick}
             onBack={() => {
               setInvestigatedNode(null);
               setFocusedChainId(null);
