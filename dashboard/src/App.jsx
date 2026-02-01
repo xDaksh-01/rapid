@@ -3,7 +3,8 @@ import ForceGraph from './components/ForceGraph';
 import FilterPanel from './components/FilterPanel';
 import TopTabs from './components/TopTabs';
 import InvestigationPanel from './components/InvestigationPanel';
-import { Loader2, AlertTriangle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import FileUploader from './components/FileUploader';
+import { Loader2, AlertTriangle, PanelLeftClose, PanelLeftOpen, Upload } from 'lucide-react';
 import { calculateCentrality, getWalletTransactions } from './utils/graphUtils';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
   const [rightPaneCollapsed, setRightPaneCollapsed] = useState(false);
   const [filteredGraphData, setFilteredGraphData] = useState(null);
   const [selectedTab, setSelectedTab] = useState('Overview');
+  const [showUploader, setShowUploader] = useState(false);
 
   const leftPaneWidth = rightPaneCollapsed ? dimensions.width - 48 : Math.floor(dimensions.width * 0.6);
   const rightPaneWidth = rightPaneCollapsed ? 48 : dimensions.width - leftPaneWidth;
@@ -48,6 +50,15 @@ function App() {
       }
     }
     loadData();
+  }, []);
+
+  const handleFileProcessed = useCallback((processedData) => {
+    setData(processedData.network_data);
+    setShowUploader(false);
+    setError(null);
+    setInvestigatedNode(null);
+    setFocusedChainId(null);
+    setThreshold(0);
   }, []);
 
   // Compute filtered node counts based on threshold
@@ -154,27 +165,46 @@ function App() {
     <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-primary)] flex">
       {/* Left Pane - Graph */}
       <div className="relative" style={{ width: leftPaneWidth, height: '100%' }}>
-        {/* Header */}
+        {/* Header - Left side controls */}
+        <div className="absolute top-4 left-4 z-40 flex flex-col gap-2">
+          {/* Primary header row */}
+          <div className="flex items-center gap-3">
+            <div className="glass px-4 py-2 rounded-lg">
+              <h1 className="font-bold text-white tracking-tight">Crypto Forensics</h1>
+              <p className="text-xs text-[var(--text-secondary)]">Money Laundering Detection System</p>
+            </div>
+            <button
+              onClick={() => setShowUploader(true)}
+              className="glass px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-white/10 transition-colors"
+              title="Upload custom dataset"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="text-sm font-medium">Upload Dataset</span>
+            </button>
+          </div>
+
+          {/* Tabs row - below header */}
+          <div className="glass rounded-lg px-2 py-1">
+            <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
+          </div>
+
+          {/* Filter panel when Filter tab is selected */}
+          {selectedTab === 'Filter' && (
+            <FilterPanel
+              threshold={threshold}
+              onThresholdChange={setThreshold}
+              metadata={mergedMetadata}
+              embedded
+            />
+          )}
+        </div>
+
+        {/* Centered Title */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
           <div className="glass px-6 py-3 rounded-full flex items-center gap-3">
             <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             <h1 className="text-lg font-bold text-white">The Smurfing Hunter</h1>
             <span className="text-[var(--text-secondary)] text-sm">Forensics Dashboard</span>
-          </div>
-        </div>
-
-        {/* Tabs + Filter tab */}
-        <div className="absolute top-4 left-4 z-50">
-          <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
-          <div className="mt-2">
-            {selectedTab === 'Filter' && (
-              <FilterPanel
-                threshold={threshold}
-                onThresholdChange={setThreshold}
-                metadata={mergedMetadata}
-                embedded
-              />
-            )}
           </div>
         </div>
 
@@ -239,6 +269,14 @@ function App() {
           />
         )}
       </div>
+
+      {/* File Uploader Modal */}
+      {showUploader && (
+        <FileUploader
+          onFileProcessed={handleFileProcessed}
+          onClose={() => setShowUploader(false)}
+        />
+      )}
     </div>
   );
 }

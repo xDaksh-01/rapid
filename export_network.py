@@ -229,9 +229,11 @@ def export_network_data(
         'chainStats': chain_stats
     }
     
-    # Ensure output directory exists
+    # Ensure output directory exists (if there is one)
     import os
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:  # Only create if there's actually a directory path
+        os.makedirs(output_dir, exist_ok=True)
     
     with open(output_path, 'w') as f:
         json.dump(network_data, f)

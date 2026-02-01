@@ -149,6 +149,133 @@ DATA PROCESSING:
 - NumPy                 : Numerical computations
 
 ================================================================================
+                         API SERVER (api_server.py)
+================================================================================
+
+The API server provides a RESTful backend for custom dataset uploads and 
+real-time ML processing. Built with Flask and CORS-enabled for dashboard access.
+
+-------------------------------------------------------------------------------
+ENDPOINTS
+-------------------------------------------------------------------------------
+
+1. POST /api/upload - Dataset Upload & Analysis
+   
+   Request:
+   - Content-Type: multipart/form-data
+   - Body: file (XLSX format with "Transactions" and "Labels" sheets)
+   
+   Response (Success - 200):
+   {
+     "success": true,
+     "filename": "uploaded_file.xlsx",
+     "network_data": {
+       "nodes": [...],      // Wallet nodes with suspicion scores
+       "links": [...],      // Transaction edges with amounts
+       "metadata": {...},   // Graph statistics
+       "chainStats": [...]  // Laundering chain analysis
+     },
+     "stats": {
+       "total_transactions": 150,
+       "total_wallets": 45,
+       "illicit_wallets": 12,
+       "high_risk_wallets": 5
+     }
+   }
+   
+   Response (Error - 400/500):
+   { "error": "Error description" }
+
+2. GET /api/health - Health Check
+   
+   Response: { "status": "healthy", "message": "API server running" }
+
+-------------------------------------------------------------------------------
+PROCESSING PIPELINE
+-------------------------------------------------------------------------------
+
+When a file is uploaded, the server performs the following steps:
+
+STEP 1: VALIDATION
+   - Check file exists in request
+   - Verify .xlsx extension
+   - Validate "Transactions" and "Labels" sheets exist
+
+STEP 2: DATA EXTRACTION
+   - Read Transactions sheet → temp_transactions.csv
+   - Read Labels sheet → temp_labels.csv
+   
+   Expected Columns:
+   | Sheet         | Required Columns                            |
+   |---------------|---------------------------------------------|
+   | Transactions  | From, To, Amount, Timestamp                 |
+   | Labels        | Wallet_ID, Label (0=clean, 1=illicit)       |
+
+STEP 3: GRAPH CONSTRUCTION (data_loader.py)
+   - Build PyTorch Geometric graph structure
+   - Compute node features (in-degree, out-degree, volume, etc.)
+   - Create edge index from transactions
+
+STEP 4: ML INFERENCE (model.py)
+   - Load trained GraphSAGE model (best_model.pt)
+   - Run forward pass on graph
+   - Apply softmax to get probability scores [0.0 - 1.0]
+
+STEP 5: NETWORK EXPORT (export_network.py)
+   - Build nodes with computed suspicion scores
+   - Create links with transaction metadata
+   - Detect and annotate laundering chains
+   - Generate network_data JSON for dashboard
+
+STEP 6: CLEANUP
+   - Delete all temporary files
+   - Return JSON response to frontend
+
+-------------------------------------------------------------------------------
+ERROR HANDLING
+-------------------------------------------------------------------------------
+
+| Error Code | Condition                          | Message                   |
+|------------|------------------------------------| --------------------------|
+| 400        | No file in request                 | "No file provided"        |
+| 400        | Wrong file format                  | "Invalid file format..."  |
+| 400        | Missing sheets                     | "Invalid file structure..."|
+| 500        | Model not found                    | "Trained model not found" |
+| 500        | Processing error                   | Dynamic error message     |
+
+-------------------------------------------------------------------------------
+RUNNING THE API SERVER
+-------------------------------------------------------------------------------
+
+1. Ensure dependencies are installed:
+   pip install flask flask-cors pandas torch
+
+2. Ensure trained model exists:
+   python main.py  (creates best_model.pt)
+
+3. Start the server:
+   python api_server.py
+   
+4. Server runs at: http://localhost:5000
+
+-------------------------------------------------------------------------------
+INTEGRATION WITH DASHBOARD
+-------------------------------------------------------------------------------
+
+The dashboard's FileUploader.jsx component sends files to this API:
+
+   const response = await fetch('http://localhost:5000/api/upload', {
+       method: 'POST',
+       body: formData,  // Contains the XLSX file
+   });
+   
+   const data = await response.json();
+   // data.network_data is passed directly to ForceGraph component
+
+This enables investigators to upload their own transaction datasets
+for real-time analysis without retraining the model.
+
+================================================================================
                       KEY FEATURES
 ================================================================================
 
