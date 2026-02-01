@@ -514,10 +514,12 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
         }));
     }, [chainStats]);
 
-    // Correct Volume: Sum of incoming transaction amounts only (must be before conditional returns)
+    // Net Volume: Sum of incoming minus outgoing transaction amounts
     const correctVolume = useMemo(() => {
-        if (!context?.transactions?.incoming) return 0;
-        return context.transactions.incoming.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+        if (!context?.transactions) return 0;
+        const incomingVolume = context.transactions.incoming?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+        const outgoingVolume = context.transactions.outgoing?.reduce((sum, tx) => sum + (tx.amount || 0), 0) || 0;
+        return incomingVolume - outgoingVolume;
     }, [context]);
 
 
@@ -1141,7 +1143,7 @@ export default function InvestigationPanel({ context, chainStats, metadata, data
                 <div className="grid grid-cols-2 gap-2">
                     <MiniStat label="In" value={centrality.inDegree} icon={<ArrowDownLeft className="w-3 h-3 text-green-400" />} />
                     <MiniStat label="Out" value={centrality.outDegree} icon={<ArrowUpRight className="w-3 h-3 text-red-400" />} />
-                    <MiniStat label="Vol" value={`$${correctVolume.toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
+                    <MiniStat label="Net Vol" value={`$${correctVolume.toFixed(0)}`} icon={<DollarSign className="w-3 h-3 text-yellow-400" />} />
                     <div className="p-3 rounded-lg bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Percent className="w-3 h-3 text-amber-400" />

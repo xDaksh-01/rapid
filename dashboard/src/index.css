@@ -17,12 +17,17 @@
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 #root {
@@ -51,8 +56,8 @@ body {
 /* Neon glow effect */
 .neon-glow {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.5),
-              0 0 40px rgba(239, 68, 68, 0.3),
-              0 0 60px rgba(239, 68, 68, 0.1);
+    0 0 40px rgba(239, 68, 68, 0.3),
+    0 0 60px rgba(239, 68, 68, 0.1);
 }
 
 /* Custom slider */
@@ -80,9 +85,12 @@ body {
 
 /* Animation for loading */
 @keyframes pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.5;
   }
@@ -90,4 +98,37 @@ body {
 
 .loading-pulse {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Landing page animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.fade-in-up {
+  animation: fadeInUp 1.5s ease-out;
+}
+
+.scroll-indicator {
+  animation: bounce 2s ease-in-out infinite;
 }

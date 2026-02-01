@@ -151,94 +151,127 @@ function App() {
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-primary)] flex">
-      {/* Left Pane - Graph */}
-      <div className="relative" style={{ width: leftPaneWidth, height: '100%' }}>
-        {/* Header */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
-          <div className="glass px-6 py-3 rounded-full flex items-center gap-3">
-            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <h1 className="text-lg font-bold text-white">The Smurfing Hunter</h1>
-            <span className="text-[var(--text-secondary)] text-sm">Forensics Dashboard</span>
+    <div className="w-full h-screen overflow-y-auto overflow-x-hidden snap-y snap-mandatory">
+      {/* Landing Page Section */}
+      <section className="w-full h-screen flex flex-col items-center justify-center bg-[var(--bg-primary)] snap-start relative">
+        <div className="fade-in-up text-center">
+          <h1 className="text-8xl font-bold text-white mb-4 tracking-tight">
+            Smurfing Hunter
+          </h1>
+          <p className="text-2xl text-[var(--text-secondary)] mb-8">
+            Advanced Money Laundering Detection
+          </p>
+          <div className="w-24 h-1 bg-gradient-to-r from-[var(--accent-blue)] via-[var(--accent-purple)] to-[var(--accent-red)] mx-auto rounded-full"></div>
+        </div>
+        
+        {/* Scroll Indicator */}
+        <div className="absolute bottom-12 scroll-indicator">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-sm text-[var(--text-secondary)]">Scroll to explore</span>
+            <svg 
+              className="w-6 h-6 text-[var(--accent-blue)]" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+            </svg>
           </div>
         </div>
+      </section>
 
-        {/* Tabs + Filter tab */}
-        <div className="absolute top-4 left-4 z-50">
-          <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
-          <div className="mt-2">
-            {selectedTab === 'Filter' && (
-              <FilterPanel
-                threshold={threshold}
-                onThresholdChange={setThreshold}
-                metadata={mergedMetadata}
-                embedded
+      {/* Dashboard Section */}
+      <section className="w-full h-screen snap-start">
+        <div className="relative w-full h-screen overflow-hidden bg-[var(--bg-primary)] flex">
+          {/* Left Pane - Graph */}
+          <div className="relative" style={{ width: leftPaneWidth, height: '100%' }}>
+            {/* Header */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50">
+              <div className="glass px-6 py-3 rounded-full flex items-center gap-3">
+                <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                <h1 className="text-lg font-bold text-white">The Smurfing Hunter</h1>
+                <span className="text-[var(--text-secondary)] text-sm">Forensics Dashboard</span>
+              </div>
+            </div>
+
+            {/* Tabs + Filter tab */}
+            <div className="absolute top-4 left-4 z-50">
+              <TopTabs selected={selectedTab} onSelect={setSelectedTab} />
+              <div className="mt-2">
+                {selectedTab === 'Filter' && (
+                  <FilterPanel
+                    threshold={threshold}
+                    onThresholdChange={setThreshold}
+                    metadata={mergedMetadata}
+                    embedded
+                  />
+                )}
+              </div>
+            </div>
+
+            <ForceGraph
+              data={data}
+              threshold={threshold}
+              onNodeClick={handleNodeClick}
+              onInvestigateNode={handleInvestigateNode}
+              onGraphDataUpdate={setFilteredGraphData}
+              highlightedChainId={highlightedChainId}
+              activeWalletId={activeWalletId}
+              focusNodeId={focusNodeId}
+              width={leftPaneWidth}
+              height={dimensions.height}
+            />
+
+            {/* Legend */}
+            <div className="absolute bottom-4 left-4 glass rounded-lg p-3 z-40">
+              <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Legend</h4>
+              <div className="space-y-1.5 text-xs">
+                <LegendItem color="bg-red-500" glow label="Known Illicit (score > 0.7)" />
+                <LegendItem color="bg-green-500" label="Clean Account (< 0.4)" />
+                <LegendItem color="border-2 border-yellow-500 bg-transparent" label="Seed / Investigated Node" />
+              </div>
+            </div>
+
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40">
+              <div className="glass px-4 py-2 rounded-lg text-xs text-[var(--text-secondary)]">
+                Click any node to drill down • Particles show money flow
+              </div>
+            </div>
+          </div>
+
+          {/* Right Pane - Investigation Panel */}
+          <div
+            className="h-full border-l border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-col"
+            style={{ width: rightPaneWidth }}
+          >
+            <button
+              onClick={() => setRightPaneCollapsed(!rightPaneCollapsed)}
+              className="absolute top-4 right-4 z-50 p-2 glass rounded-lg hover:bg-white/10 transition-colors"
+            >
+              {rightPaneCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+            </button>
+
+            {!rightPaneCollapsed && (
+              <InvestigationPanel
+                context={investigationContext}
+                chainStats={data?.chainStats}
+                metadata={data?.metadata}
+                data={data}
+                investigatedNodeData={investigatedNode}
+                externalChainId={focusedChainId}
+                onHighlightChain={setHighlightedChainId}
+                onWalletFocus={setActiveWalletId}
+                onWalletClick={handleWalletClick}
+                onBack={() => {
+                  setInvestigatedNode(null);
+                  setFocusedChainId(null);
+                  setHighlightedChainId(null);
+                }}
               />
             )}
           </div>
         </div>
-
-        <ForceGraph
-          data={data}
-          threshold={threshold}
-          onNodeClick={handleNodeClick}
-          onInvestigateNode={handleInvestigateNode}
-          onGraphDataUpdate={setFilteredGraphData}
-          highlightedChainId={highlightedChainId}
-          activeWalletId={activeWalletId}
-          focusNodeId={focusNodeId}
-          width={leftPaneWidth}
-          height={dimensions.height}
-        />
-
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 glass rounded-lg p-3 z-40">
-          <h4 className="text-xs font-medium text-[var(--text-secondary)] mb-2">Legend</h4>
-          <div className="space-y-1.5 text-xs">
-            <LegendItem color="bg-red-500" glow label="Known Illicit (score > 0.7)" />
-            <LegendItem color="bg-green-500" label="Clean Account (< 0.4)" />
-            <LegendItem color="border-2 border-yellow-500 bg-transparent" label="Seed / Investigated Node" />
-          </div>
-        </div>
-
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40">
-          <div className="glass px-4 py-2 rounded-lg text-xs text-[var(--text-secondary)]">
-            Click any node to drill down • Particles show money flow
-          </div>
-        </div>
-      </div>
-
-      {/* Right Pane - Investigation Panel */}
-      <div
-        className="h-full border-l border-[var(--border-color)] bg-[var(--bg-secondary)] flex flex-col"
-        style={{ width: rightPaneWidth }}
-      >
-        <button
-          onClick={() => setRightPaneCollapsed(!rightPaneCollapsed)}
-          className="absolute top-4 right-4 z-50 p-2 glass rounded-lg hover:bg-white/10 transition-colors"
-        >
-          {rightPaneCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
-        </button>
-
-        {!rightPaneCollapsed && (
-          <InvestigationPanel
-            context={investigationContext}
-            chainStats={data?.chainStats}
-            metadata={data?.metadata}
-            data={data}
-            investigatedNodeData={investigatedNode}
-            externalChainId={focusedChainId}
-            onHighlightChain={setHighlightedChainId}
-            onWalletFocus={setActiveWalletId}
-            onWalletClick={handleWalletClick}
-            onBack={() => {
-              setInvestigatedNode(null);
-              setFocusedChainId(null);
-              setHighlightedChainId(null);
-            }}
-          />
-        )}
-      </div>
+      </section>
     </div>
   );
 }
